@@ -6,13 +6,31 @@ PowerShell that already ships with Windows.
 
 ## Install
 
+### Windows
+
 ```powershell
 iwr https://raw.githubusercontent.com/Riyoway/quickup/main/quickup.ps1 -OutFile "$env:TEMP\quickup.ps1"
 powershell -ExecutionPolicy Bypass -File "$env:TEMP\quickup.ps1" install
 ```
 
+Or download the repo and double-click **`install.cmd`** to pick install/uninstall.
 The installer copies the script to `%LOCALAPPDATA%\QuickUp` and adds a per-user
 context-menu entry (`HKCU`, no administrator rights needed).
+
+### macOS / Linux
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Riyoway/quickup/main/quickup.sh -o quickup.sh
+sh quickup.sh install
+```
+
+Needs `curl`. Integrates with the file managers it finds:
+
+- **macOS** — Finder Quick Actions (`right-click → Quick Actions → QuickUp: <host>`)
+- **Linux** — Nautilus (GNOME), Dolphin (KDE), Thunar (XFCE)
+
+A dialog needs `zenity` or `kdialog` on Linux (`pbcopy`/`osascript` are built in on
+macOS); clipboard uses `wl-copy`, `xclip`, or `xsel`.
 
 ## Use
 
@@ -34,7 +52,13 @@ Files are sent directly to the third-party host you pick; nothing is proxied.
 ## Uninstall
 
 ```powershell
+# Windows
 powershell -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\QuickUp\quickup.ps1" uninstall
+```
+
+```sh
+# macOS / Linux
+sh quickup.sh uninstall
 ```
 
 ## License
