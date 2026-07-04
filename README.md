@@ -8,6 +8,10 @@ Right-click any file in Windows Explorer, pick a host, and get a shareable URL
 copied to your clipboard. No app to keep running, no dependencies beyond the
 PowerShell that already ships with Windows.
 
+<p align="center">
+  <img src="assets/screenshot.png" width="340" alt="QuickUp in the Explorer context menu">
+</p>
+
 ## Install
 
 ### Windows
