@@ -130,6 +130,29 @@ cmd_upload() {
     esac
 }
 
+# Resolve a per-service favicon (bundled or fetched), echoing its path; falls
+# back to the app icon ($ICON) for hosts without one (e.g. x0.at).
+svc_icon() {
+    local svc="$1" idir="$2"
+    local dest="$idir/icons/$svc.png" src; src="$(dirname "$SELF")/assets/services/$svc.png"
+    mkdir -p "$idir/icons"
+    if [ -f "$src" ]; then cp "$src" "$dest"
+    elif [ ! -f "$dest" ]; then
+        curl -fsSL "https://raw.githubusercontent.com/Riyoway/quickup/main/assets/services/$svc.png" -o "$dest" 2>/dev/null || true
+    fi
+    if [ -f "$dest" ]; then printf '%s' "$dest"; else printf '%s' "$ICON"; fi
+}
+
+# Show a result when update/uninstall are launched from a file manager (no tty);
+# in a terminal the banner already covers it.
+gui_notify() {
+    [ -t 1 ] && return 0
+    if is_mac; then osascript -e "display notification \"$1\" with title \"QuickUp\"" >/dev/null 2>&1 || true
+    elif command -v zenity  >/dev/null 2>&1; then zenity --info --title=QuickUp --text="$1" >/dev/null 2>&1 || true
+    elif command -v kdialog >/dev/null 2>&1; then kdialog --title QuickUp --msgbox "$1" >/dev/null 2>&1 || true
+    fi
+}
+
 cmd_install() {
     local dir; dir="$(install_dir)"
     mkdir -p "$dir"
@@ -185,6 +208,7 @@ cmd_uninstall() {
     printf '           %s\n' "$(install_dir)"
     printf '%s           Delete that folder to remove QuickUp completely.%s\n' "$B_DIM" "$B_RST"
     printf '%s%s%s\n\n' "$B_RULE" "$RULE" "$B_RST"
+    gui_notify "QuickUp removed from the context menu."
 }
 
 cmd_update() {
@@ -194,6 +218,7 @@ cmd_update() {
     curl -fsSL "$url" -o "$tmp"
     sh "$tmp" install
     rm -f "$tmp"
+    gui_notify "QuickUp updated to the latest version."
 }
 
 cmd_selftest() {
@@ -222,10 +247,13 @@ done
 EOF
         chmod +x "$base/$(display_of "$s")"
     done
+    # Management entries (Nautilus scripts have no icons or separators).
+    printf '#!/usr/bin/env bash\n"%s" update\n'    "$q" > "$base/Update QuickUp";    chmod +x "$base/Update QuickUp"
+    printf '#!/usr/bin/env bash\n"%s" uninstall\n' "$q" > "$base/Uninstall QuickUp"; chmod +x "$base/Uninstall QuickUp"
 }
 
 install_dolphin() {
-    local q="$1"
+    local q="$1" idir; idir="$(dirname "$q")"
     local dir="$HOME/.local/share/kio/servicemenus"
     mkdir -p "$dir"
     local f="$dir/quickup.desktop"
@@ -233,7 +261,7 @@ install_dolphin() {
         echo "[Desktop Entry]"
         echo "Type=Service"
         echo "MimeType=all/allfiles;"
-        printf "Actions="; for s in "${services[@]}"; do printf "%s;" "$s"; done; echo
+        printf "Actions="; for s in "${services[@]}"; do printf "%s;" "$s"; done; printf "update;uninstall;\n"
         echo "X-KDE-Submenu=QuickUp"
         echo "X-KDE-Priority=TopLevel"
         echo "Icon=$ICON"
@@ -241,31 +269,49 @@ install_dolphin() {
         for s in "${services[@]}"; do
             echo "[Desktop Action $s]"
             echo "Name=$(display_of "$s")"
-            echo "Icon=$ICON"
+            echo "Icon=$(svc_icon "$s" "$idir")"
             echo "Exec=\"$q\" upload $s %f"
             echo
         done
+        # Dolphin submenus have no separator, so the management items just
+        # follow the hosts.
+        echo "[Desktop Action update]"
+        echo "Name=Update QuickUp"
+        echo "Icon=$ICON"
+        echo "Exec=\"$q\" update"
+        echo
+        echo "[Desktop Action uninstall]"
+        echo "Name=Uninstall QuickUp"
+        echo "Icon=$ICON"
+        echo "Exec=\"$q\" uninstall"
+        echo
     } > "$f"
     chmod +x "$f"
 }
 
 install_thunar() {
-    local q="$1"
+    local q="$1" idir; idir="$(dirname "$q")"
     local dir="$HOME/.config/Thunar"
     local f="$dir/uca.xml"
     mkdir -p "$dir"
     [ -f "$f" ] || printf '<?xml version="1.0" encoding="UTF-8"?>\n<actions>\n</actions>\n' > "$f"
     remove_thunar_block "$f"
 
+    local types='<other-files/><text-files/><image-files/><audio-files/><video-files/>'
     local blk; blk="$(mktemp)"
     {
         echo "<!-- quickup:begin -->"
         for s in "${services[@]}"; do
-            printf '<action><icon>%s</icon><name>%s</name><submenu>QuickUp</submenu>' "$ICON" "$(display_of "$s")"
+            printf '<action><icon>%s</icon><name>%s</name><submenu>QuickUp</submenu>' "$(svc_icon "$s" "$idir")" "$(display_of "$s")"
             printf '<unique-id>quickup-%s</unique-id><command>&quot;%s&quot; upload %s %%f</command>' "$s" "$q" "$s"
-            printf '<description>QuickUp</description><patterns>*</patterns>'
-            printf '<other-files/><text-files/><image-files/><audio-files/><video-files/></action>\n'
+            printf '<description>QuickUp</description><patterns>*</patterns>%s</action>\n' "$types"
         done
+        printf '<action><icon>%s</icon><name>Update QuickUp</name><submenu>QuickUp</submenu>' "$ICON"
+        printf '<unique-id>quickup-update</unique-id><command>&quot;%s&quot; update</command>' "$q"
+        printf '<description>QuickUp</description><patterns>*</patterns>%s</action>\n' "$types"
+        printf '<action><icon>%s</icon><name>Uninstall QuickUp</name><submenu>QuickUp</submenu>' "$ICON"
+        printf '<unique-id>quickup-uninstall</unique-id><command>&quot;%s&quot; uninstall</command>' "$q"
+        printf '<description>QuickUp</description><patterns>*</patterns>%s</action>\n' "$types"
         echo "<!-- quickup:end -->"
     } > "$blk"
 

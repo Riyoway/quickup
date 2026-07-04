@@ -94,6 +94,34 @@ function Get-ServiceRequest {
     }
 }
 
+# Copy asset $Rel (e.g. 'quickup.ico' or 'services/catbox.ico') to $Dest from
+# the repo checkout, or fetch it from GitHub for one-line remote installs.
+# Returns $true when $Dest ends up present.
+function Get-Asset {
+    param([string]$Rel, [string]$Dest)
+    $src = Join-Path (Split-Path -Parent $PSCommandPath) ('assets\' + ($Rel -replace '/', '\'))
+    if (Test-Path -LiteralPath $src) { Copy-Item -LiteralPath $src -Destination $Dest -Force; return $true }
+    if (Test-Path -LiteralPath $Dest) { return $true }
+    try {
+        [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+        Invoke-WebRequest -UseBasicParsing -OutFile $Dest -Uri "https://raw.githubusercontent.com/Riyoway/quickup/main/assets/$Rel"
+    } catch { }
+    return (Test-Path -LiteralPath $Dest)
+}
+
+function New-MenuItem {
+    param([string]$Key, [string]$Label, [string]$Command, [string]$Icon, [int]$Flags = 0)
+    $base = "$script:RegPath\shell\$Key"
+    $verb = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey($base)
+    $verb.SetValue('', $Label)
+    if ($Icon)  { $verb.SetValue('Icon', $Icon) }
+    if ($Flags) { $verb.SetValue('CommandFlags', $Flags, [Microsoft.Win32.RegistryValueKind]::DWord) }
+    $verb.Close()
+    $cmd = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey("$base\command")
+    $cmd.SetValue('', $Command)
+    $cmd.Close()
+}
+
 function Install-QuickUp {
     $installDir = Join-Path $env:LOCALAPPDATA 'QuickUp'
     New-Item -ItemType Directory -Force -Path $installDir | Out-Null
@@ -102,24 +130,25 @@ function Install-QuickUp {
         Copy-Item -LiteralPath $PSCommandPath -Destination $target -Force
     }
 
-    # Menu icon: use the bundled .ico when installing from the repo, otherwise
-    # fetch it once (best effort) so the one-line remote install still gets it.
+    # Parent-menu icon (app icon).
     $icon = Join-Path $installDir 'quickup.ico'
-    $srcIcon = Join-Path (Split-Path -Parent $PSCommandPath) 'assets\quickup.ico'
-    if (Test-Path -LiteralPath $srcIcon) {
-        Copy-Item -LiteralPath $srcIcon -Destination $icon -Force
-    }
-    elseif (-not (Test-Path -LiteralPath $icon)) {
-        try {
-            [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
-            Invoke-WebRequest -UseBasicParsing -OutFile $icon `
-                -Uri 'https://raw.githubusercontent.com/Riyoway/quickup/main/assets/quickup.ico'
-        } catch { }
+    [void](Get-Asset 'quickup.ico' $icon)
+
+    # Per-service favicons; a host without one (e.g. x0.at) uses the app icon.
+    $iconDir = Join-Path $installDir 'icons'
+    New-Item -ItemType Directory -Force -Path $iconDir | Out-Null
+    $svcIcon = @{}
+    foreach ($svc in $script:Services.Keys) {
+        $dest = Join-Path $iconDir "$svc.ico"
+        if (Get-Asset "services/$svc.ico" $dest) { $svcIcon[$svc] = $dest }
+        elseif (Test-Path -LiteralPath $icon) { $svcIcon[$svc] = $icon }
     }
 
     # Always launch through Windows PowerShell so the menu works even if the
     # user installed from pwsh 7.
     $ps = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+    $hidden  = "`"$ps`" -NoProfile -STA -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$target`""
+    $visible = "`"$ps`" -NoProfile -ExecutionPolicy Bypass -File `"$target`""
 
     # The '*' key is a wildcard in the PS registry provider, so drive it
     # through the .NET API which treats the path literally.
@@ -130,14 +159,17 @@ function Install-QuickUp {
     $root.SetValue('SubCommands', '')  # empty + nested 'shell' key => cascade
     $root.Close()
 
+    # Items sort alphabetically by key name, so number them to fix the order
+    # and keep the management entries last.
+    $order = 10
     foreach ($svc in $script:Services.Keys) {
-        $verb = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey("$script:RegPath\shell\$svc")
-        $verb.SetValue('', $script:Services[$svc])
-        $verb.Close()
-        $cmd = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey("$script:RegPath\shell\$svc\command")
-        $cmd.SetValue('', "`"$ps`" -NoProfile -STA -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$target`" upload $svc `"%1`"")
-        $cmd.Close()
+        New-MenuItem ('{0:D2}_{1}' -f $order, $svc) $script:Services[$svc] "$hidden upload $svc `"%1`"" $svcIcon[$svc]
+        $order += 10
     }
+    # 0x20 = ECF_SEPARATORBEFORE: draws a line above Update, splitting the
+    # hosts from the management actions.
+    New-MenuItem '80_update'    'Update QuickUp'    "$visible update"    $icon 0x20
+    New-MenuItem '90_uninstall' 'Uninstall QuickUp' "$visible uninstall" $icon
 
     Write-Banner 'INSTALLED'
     Write-Host '  [ OK ] ' -ForegroundColor Green -NoNewline
@@ -145,6 +177,7 @@ function Install-QuickUp {
     Write-Host ''
     Write-Field 'Use'   'Right-click a file  ->  QuickUp  ->  pick a host'
     Write-Field 'Hosts' ($script:Services.Values -join '  |  ')
+    Write-Field 'Menu'  'Update / Uninstall are in the submenu too'
     Write-Field 'Script' $target
     Write-Host ''
     Write-Host '  Uninstall anytime:' -ForegroundColor DarkGray
