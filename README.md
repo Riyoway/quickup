@@ -47,11 +47,27 @@ a small dialog shows the URL, already on your clipboard. **Copy** re-copies it,
 | Host      | Retention        |
 | --------- | ---------------- |
 | Catbox    | permanent        |
+| x0.at     | up to 1 year     |
 | Litterbox | 1 hour           |
-| 0x0.st    | up to 1 year     |
 | Uguu      | 48 hours         |
 
 Files are sent directly to the third-party host you pick; nothing is proxied.
+Public hosts come and go — if one is unreachable or blocks your network, pick
+another.
+
+## Update
+
+```powershell
+# Windows
+powershell -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\QuickUp\quickup.ps1" update
+```
+
+```sh
+# macOS / Linux
+sh quickup.sh update
+```
+
+Pulls the latest script and re-registers the menu.
 
 ## Uninstall
 

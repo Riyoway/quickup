@@ -17,7 +17,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('install', 'uninstall', 'upload', 'selftest')]
+    [ValidateSet('install', 'uninstall', 'update', 'upload', 'selftest')]
     [string]$Command = 'install',
 
     [Parameter(Position = 1)]
@@ -32,8 +32,8 @@ $ErrorActionPreference = 'Stop'
 # Display name shown in the submenu and the result dialog, in menu order.
 $script:Services = [ordered]@{
     'catbox'    = 'Catbox (permanent)'
+    'x0'        = 'x0.at (up to 1 year)'
     'litterbox' = 'Litterbox (1 hour)'
-    '0x0'       = '0x0.st (up to 1 year)'
     'uguu'      = 'Uguu (48 hours)'
 }
 
@@ -70,8 +70,8 @@ function Get-ServiceRequest {
             @{ Uri = 'https://litterbox.catbox.moe/resources/internals/api.php'
                Fields = @{ reqtype = 'fileupload'; time = '1h' }; FileField = 'fileToUpload' }
         }
-        '0x0' {
-            @{ Uri = 'https://0x0.st'; Fields = @{}; FileField = 'file' }
+        'x0' {
+            @{ Uri = 'https://x0.at'; Fields = @{}; FileField = 'file' }
         }
         'uguu' {
             @{ Uri = 'https://uguu.se/upload?output=text'; Fields = @{}; FileField = 'files[]' }
@@ -139,6 +139,17 @@ function Install-QuickUp {
     Write-Host ''
 }
 
+function Update-QuickUp {
+    $url = 'https://raw.githubusercontent.com/Riyoway/quickup/main/quickup.ps1'
+    $tmp = Join-Path $env:TEMP 'quickup-latest.ps1'
+    [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+    Write-Host 'Fetching the latest QuickUp ...' -ForegroundColor DarkCyan
+    Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $tmp
+    # Re-run install from the fresh copy: refreshes the script, icon and menu.
+    & (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') `
+        -NoProfile -ExecutionPolicy Bypass -File $tmp install
+}
+
 function Uninstall-QuickUp {
     [void][Microsoft.Win32.Registry]::CurrentUser.DeleteSubKeyTree($script:RegPath, $false)
     $dir = Join-Path $env:LOCALAPPDATA 'QuickUp'
@@ -167,6 +178,31 @@ function Invoke-UploadUI {
     Add-Type -AssemblyName System.Net.Http
     [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
 
+    # Counts bytes as HttpClient reads the file to send it, so the dialog can
+    # show real upload progress instead of an indeterminate spinner.
+    if (-not ('QuickUp.ProgressStream' -as [type])) {
+        Add-Type -TypeDefinition @'
+namespace QuickUp {
+    public class ProgressStream : System.IO.Stream {
+        private System.IO.Stream _s;
+        public long Sent;
+        public ProgressStream(System.IO.Stream s) { _s = s; }
+        public override bool CanRead { get { return _s.CanRead; } }
+        public override bool CanSeek { get { return _s.CanSeek; } }
+        public override bool CanWrite { get { return false; } }
+        public override long Length { get { return _s.Length; } }
+        public override long Position { get { return _s.Position; } set { _s.Position = value; } }
+        public override void Flush() { _s.Flush(); }
+        public override int Read(byte[] b, int o, int c) { int n = _s.Read(b, o, c); Sent += n; return n; }
+        public override long Seek(long o, System.IO.SeekOrigin r) { return _s.Seek(o, r); }
+        public override void SetLength(long v) { _s.SetLength(v); }
+        public override void Write(byte[] b, int o, int c) { throw new System.NotSupportedException(); }
+        protected override void Dispose(bool d) { if (d && _s != null) { _s.Dispose(); } base.Dispose(d); }
+    }
+}
+'@
+    }
+
     $displayName = $script:Services[$Service]
     $fileName = [System.IO.Path]::GetFileName($Path)
     $req = Get-ServiceRequest -Service $Service
@@ -180,7 +216,8 @@ function Invoke-UploadUI {
     foreach ($k in $req.Fields.Keys) {
         $content.Add([System.Net.Http.StringContent]::new([string]$req.Fields[$k]), $k)
     }
-    $stream = [System.IO.File]::OpenRead($Path)
+    $total = (Get-Item -LiteralPath $Path).Length
+    $stream = [QuickUp.ProgressStream]::new([System.IO.File]::OpenRead($Path))
     $fileContent = [System.Net.Http.StreamContent]::new($stream)
     $fileContent.Headers.ContentType = [System.Net.Http.Headers.MediaTypeHeaderValue]::new('application/octet-stream')
     $content.Add($fileContent, $req.FileField, $fileName)
@@ -198,7 +235,7 @@ function Invoke-UploadUI {
         Text = "Uploading `"$fileName`" to $displayName ..."
     }
     $bar = [System.Windows.Forms.ProgressBar]@{
-        Style = 'Marquee'; MarqueeAnimationSpeed = 30
+        Style = 'Continuous'; Minimum = 0; Maximum = 100
         Location = [System.Drawing.Point]::new(12, 56); Size = [System.Drawing.Size]::new(420, 20)
     }
     $box = [System.Windows.Forms.TextBox]@{
@@ -227,7 +264,15 @@ function Invoke-UploadUI {
 
     $timer = [System.Windows.Forms.Timer]@{ Interval = 150 }
     $timer.Add_Tick({
-        if (-not $task.IsCompleted) { return }
+        if (-not $task.IsCompleted) {
+            if ($total -gt 0) {
+                $pct = [int][Math]::Min(100, [Math]::Floor($stream.Sent * 100 / $total))
+                $bar.Value = $pct
+                $label.Text = "Uploading `"$fileName`" to $displayName ...  $pct%"
+            }
+            return
+        }
+        $bar.Value = 100
         $timer.Stop()
         $bar.Visible = $false
         $box.Visible = $true
@@ -272,6 +317,7 @@ function Invoke-SelfTest {
 switch ($Command) {
     'install'   { Install-QuickUp }
     'uninstall' { Uninstall-QuickUp }
+    'update'    { Update-QuickUp }
     'upload'    { Invoke-UploadUI -Service $Service -Path $Path }
     'selftest'  { Invoke-SelfTest }
 }

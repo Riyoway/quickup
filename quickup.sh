@@ -13,7 +13,7 @@ UA='QuickUp/1.0 (+https://github.com/Riyoway/quickup)'
 SELF="$(cd "$(dirname "$0")" >/dev/null 2>&1 && pwd)/$(basename "$0")"
 
 # Service order == submenu order.
-services=(catbox litterbox 0x0 uguu)
+services=(catbox x0 litterbox uguu)
 
 # Menu icon; replaced with the installed logo path by cmd_install.
 ICON="go-up"
@@ -46,8 +46,8 @@ host_list() {
 display_of() {
     case "$1" in
         catbox)    echo "Catbox (permanent)" ;;
+        x0)        echo "x0.at (up to 1 year)" ;;
         litterbox) echo "Litterbox (1 hour)" ;;
-        0x0)       echo "0x0.st (up to 1 year)" ;;
         uguu)      echo "Uguu (48 hours)" ;;
         *)         return 1 ;;
     esac
@@ -59,7 +59,7 @@ upload_of() {
     case "$svc" in
         catbox)    curl -fsS -A "$UA" -F reqtype=fileupload -F "fileToUpload=@$file" https://catbox.moe/user/api.php ;;
         litterbox) curl -fsS -A "$UA" -F reqtype=fileupload -F time=1h -F "fileToUpload=@$file" https://litterbox.catbox.moe/resources/internals/api.php ;;
-        0x0)       curl -fsS -A "$UA" -F "file=@$file" https://0x0.st ;;
+        x0)        curl -fsS -A "$UA" -F "file=@$file" https://x0.at ;;
         uguu)      curl -fsS -A "$UA" -F "files[]=@$file" "https://uguu.se/upload?output=text" ;;
         *)         echo "unknown service: $svc" >&2; return 1 ;;
     esac
@@ -185,6 +185,15 @@ cmd_uninstall() {
     printf '           %s\n' "$(install_dir)"
     printf '%s           Delete that folder to remove QuickUp completely.%s\n' "$B_DIM" "$B_RST"
     printf '%s%s%s\n\n' "$B_RULE" "$RULE" "$B_RST"
+}
+
+cmd_update() {
+    local url='https://raw.githubusercontent.com/Riyoway/quickup/main/quickup.sh'
+    local tmp; tmp="$(mktemp)"
+    echo "Fetching the latest QuickUp ..."
+    curl -fsSL "$url" -o "$tmp"
+    sh "$tmp" install
+    rm -f "$tmp"
 }
 
 cmd_selftest() {
@@ -351,7 +360,8 @@ EOF
 case "${1:-install}" in
     install)   cmd_install ;;
     uninstall) cmd_uninstall ;;
+    update)    cmd_update ;;
     upload)    cmd_upload "${2:?service}" "${3:?file}" ;;
     selftest)  cmd_selftest ;;
-    *)         echo "usage: quickup.sh {install|uninstall|upload <service> <file>}" >&2; exit 1 ;;
+    *)         echo "usage: quickup.sh {install|uninstall|update|upload <service> <file>}" >&2; exit 1 ;;
 esac
