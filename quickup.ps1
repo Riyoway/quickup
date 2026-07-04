@@ -40,6 +40,23 @@ $script:Services = [ordered]@{
 $script:UserAgent = 'QuickUp/1.0 (+https://github.com/Riyoway/quickup)'
 $script:RegPath = 'Software\Classes\*\shell\QuickUp'
 
+# ASCII-only banner so it renders in any console code page (install.cmd).
+function Write-Banner {
+    param([string]$Title)
+    $rule = '=' * 60
+    Write-Host ''
+    Write-Host $rule -ForegroundColor DarkCyan
+    Write-Host "    QuickUp  -  $Title" -ForegroundColor Cyan
+    Write-Host $rule -ForegroundColor DarkCyan
+    Write-Host ''
+}
+
+function Write-Field {
+    param([string]$Label, [string]$Value, [string]$Color = 'Gray')
+    Write-Host ("  {0,-8}" -f $Label) -ForegroundColor DarkGray -NoNewline
+    Write-Host $Value -ForegroundColor $Color
+}
+
 # Endpoint definitions. Every one of these hosts returns the plain-text URL
 # as the whole response body, so completion handling is uniform.
 function Get-ServiceRequest {
@@ -92,14 +109,32 @@ function Install-QuickUp {
         $cmd.Close()
     }
 
-    Write-Host "QuickUp installed. Right-click any file -> QuickUp -> pick a host." -ForegroundColor Green
-    Write-Host "Uninstall with: powershell -ExecutionPolicy Bypass -File `"$target`" uninstall"
+    Write-Banner 'INSTALLED'
+    Write-Host '  [ OK ] ' -ForegroundColor Green -NoNewline
+    Write-Host 'Added to the right-click menu.'
+    Write-Host ''
+    Write-Field 'Use'   'Right-click a file  ->  QuickUp  ->  pick a host'
+    Write-Field 'Hosts' ($script:Services.Values -join '  |  ')
+    Write-Field 'Script' $target
+    Write-Host ''
+    Write-Host '  Uninstall anytime:' -ForegroundColor DarkGray
+    Write-Host "     powershell -ExecutionPolicy Bypass -File `"$target`" uninstall" -ForegroundColor Yellow
+    Write-Host ('=' * 60) -ForegroundColor DarkCyan
+    Write-Host ''
 }
 
 function Uninstall-QuickUp {
     [void][Microsoft.Win32.Registry]::CurrentUser.DeleteSubKeyTree($script:RegPath, $false)
-    Write-Host "QuickUp removed from the context menu." -ForegroundColor Green
-    Write-Host "Installed files remain in: $(Join-Path $env:LOCALAPPDATA 'QuickUp')"
+    $dir = Join-Path $env:LOCALAPPDATA 'QuickUp'
+    Write-Banner 'REMOVED'
+    Write-Host '  [ OK ] ' -ForegroundColor Green -NoNewline
+    Write-Host 'Right-click menu entry deleted.'
+    Write-Host ''
+    Write-Field 'Note' 'The installed script still lives at:'
+    Write-Host ("           $dir") -ForegroundColor Gray
+    Write-Host '           Delete that folder to remove QuickUp completely.' -ForegroundColor DarkGray
+    Write-Host ('=' * 60) -ForegroundColor DarkCyan
+    Write-Host ''
 }
 
 function Invoke-UploadUI {

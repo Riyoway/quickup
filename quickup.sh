@@ -15,6 +15,31 @@ SELF="$(cd "$(dirname "$0")" >/dev/null 2>&1 && pwd)/$(basename "$0")"
 # Service order == submenu order.
 services=(catbox litterbox 0x0 uguu)
 
+# Decorated banner output (colours only when writing to a terminal).
+if [ -t 1 ]; then
+    B_RULE=$'\033[36m'; B_TITLE=$'\033[1;36m'; B_OK=$'\033[1;32m'
+    B_DIM=$'\033[2m'; B_CMD=$'\033[33m'; B_RST=$'\033[0m'
+else
+    B_RULE=; B_TITLE=; B_OK=; B_DIM=; B_CMD=; B_RST=
+fi
+RULE='============================================================'
+
+banner() {
+    printf '\n%s%s%s\n%s    QuickUp  -  %s%s\n%s%s%s\n\n' \
+        "$B_RULE" "$RULE" "$B_RST" "$B_TITLE" "$1" "$B_RST" "$B_RULE" "$RULE" "$B_RST"
+}
+
+field() { printf '%s  %-8s%s%s\n' "$B_DIM" "$1" "$B_RST" "$2"; }
+
+host_list() {
+    local out=""
+    for s in "${services[@]}"; do
+        [ -n "$out" ] && out="$out  |  "
+        out="$out$(display_of "$s")"
+    done
+    printf '%s' "$out"
+}
+
 display_of() {
     case "$1" in
         catbox)    echo "Catbox (permanent)" ;;
@@ -108,19 +133,30 @@ cmd_install() {
     local target="$dir/quickup.sh"
     [ "$SELF" = "$target" ] || install -m 755 "$SELF" "$target"
 
+    local integrated=()
     if is_mac; then
-        install_macos "$target"
-        echo "Installed. Finder right-click -> Quick Actions -> QuickUp: <host>."
-        echo "(You may need to enable them in System Settings -> Extensions -> Finder.)"
+        install_macos "$target"; integrated+=("Finder Quick Actions")
     else
-        local any=0
-        install_nautilus "$target" && { echo "Nautilus (GNOME) integrated."; any=1; }
-        install_dolphin  "$target" && { echo "Dolphin (KDE) integrated."; any=1; }
-        install_thunar   "$target" && { echo "Thunar (XFCE) integrated."; any=1; }
-        [ "$any" = 1 ] || echo "No supported file manager config path found; script installed at $target."
-        echo "Restart your file manager (or log out/in) for the menu to appear."
+        install_nautilus "$target" && integrated+=("Nautilus (GNOME)")
+        install_dolphin  "$target" && integrated+=("Dolphin (KDE)")
+        install_thunar   "$target" && integrated+=("Thunar (XFCE)")
     fi
-    echo "Uninstall with: $target uninstall"
+
+    banner INSTALLED
+    printf '%s  [ OK ]%s Configured for:\n' "$B_OK" "$B_RST"
+    for m in "${integrated[@]}"; do printf '           - %s\n' "$m"; done
+    printf '\n'
+    field Use    "Right-click a file  ->  QuickUp  ->  pick a host"
+    field Hosts  "$(host_list)"
+    field Script "$target"
+    printf '\n'
+    if is_mac; then
+        printf '%s  Enable under System Settings -> Extensions -> Finder if needed.%s\n' "$B_DIM" "$B_RST"
+    else
+        printf '%s  Restart your file manager (or log out/in) to see the menu.%s\n' "$B_DIM" "$B_RST"
+    fi
+    printf '%s  Uninstall:%s %s"%s" uninstall%s\n' "$B_DIM" "$B_RST" "$B_CMD" "$target" "$B_RST"
+    printf '%s%s%s\n\n' "$B_RULE" "$RULE" "$B_RST"
 }
 
 cmd_uninstall() {
@@ -132,7 +168,12 @@ cmd_uninstall() {
                "$HOME/.local/share/kservices5/ServiceMenus/quickup.desktop"
         remove_thunar_block "$HOME/.config/Thunar/uca.xml"
     fi
-    echo "QuickUp removed from the context menu. Files remain in $(install_dir)."
+    banner REMOVED
+    printf '%s  [ OK ]%s Right-click menu entries deleted.\n\n' "$B_OK" "$B_RST"
+    field Note "The installed script still lives at:"
+    printf '           %s\n' "$(install_dir)"
+    printf '%s           Delete that folder to remove QuickUp completely.%s\n' "$B_DIM" "$B_RST"
+    printf '%s%s%s\n\n' "$B_RULE" "$RULE" "$B_RST"
 }
 
 cmd_selftest() {
