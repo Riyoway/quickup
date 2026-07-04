@@ -57,6 +57,20 @@ function Write-Field {
     Write-Host $Value -ForegroundColor $Color
 }
 
+# The Windows clipboard is a shared, briefly-lockable resource; a single
+# SetText throws "Requested Clipboard operation did not succeed" whenever
+# another app holds it. SetDataObject retries, and we never let a copy failure
+# look like an upload failure.
+function Copy-Text {
+    param([string]$Text)
+    # SetDataObject retries the OpenClipboard call (10 x 200ms) to ride out a
+    # lock; Set-Clipboard is a separate code path that sometimes wins when it
+    # doesn't. Either succeeding is enough.
+    try { [System.Windows.Forms.Clipboard]::SetDataObject($Text, $true, 10, 200); return $true } catch { }
+    try { Set-Clipboard -Value $Text; return $true } catch { }
+    return $false
+}
+
 # Endpoint definitions. Every one of these hosts returns the plain-text URL
 # as the whole response body, so completion handling is uniform.
 function Get-ServiceRequest {
@@ -258,7 +272,7 @@ namespace QuickUp {
     $form.CancelButton = $btnClose
 
     $btnCopy.Add_Click({
-        if ($state.Url) { [System.Windows.Forms.Clipboard]::SetText($state.Url); $btnCopy.Text = 'Copied!' }
+        if ($state.Url) { $btnCopy.Text = if (Copy-Text $state.Url) { 'Copied!' } else { 'Copy failed' } }
     }.GetNewClosure())
     $btnOpen.Add_Click({ if ($state.Url) { Start-Process $state.Url } }.GetNewClosure())
 
@@ -285,8 +299,9 @@ namespace QuickUp {
             $label.Text = "Uploaded to $displayName :"
             $box.Text = $body
             $box.SelectAll()
-            [System.Windows.Forms.Clipboard]::SetText($body)
-            $btnCopy.Text = 'Copied!'; $btnCopy.Enabled = $true; $btnOpen.Enabled = $true
+            $btnCopy.Enabled = $true; $btnOpen.Enabled = $true
+            # Copy last: a clipboard lock must not turn a good upload into an error.
+            $btnCopy.Text = if (Copy-Text $body) { 'Copied!' } else { 'Copy' }
         }
         catch {
             $label.Text = 'Upload failed:'
