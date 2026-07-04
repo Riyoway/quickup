@@ -15,6 +15,9 @@ SELF="$(cd "$(dirname "$0")" >/dev/null 2>&1 && pwd)/$(basename "$0")"
 # Service order == submenu order.
 services=(catbox litterbox 0x0 uguu)
 
+# Menu icon; replaced with the installed logo path by cmd_install.
+ICON="go-up"
+
 # Decorated banner output (colours only when writing to a terminal).
 if [ -t 1 ]; then
     B_RULE=$'\033[36m'; B_TITLE=$'\033[1;36m'; B_OK=$'\033[1;32m'
@@ -133,6 +136,14 @@ cmd_install() {
     local target="$dir/quickup.sh"
     [ "$SELF" = "$target" ] || install -m 755 "$SELF" "$target"
 
+    # Menu icon: bundled logo from the repo, or fetched once (best effort).
+    local icon="$dir/icon.png" src="$(dirname "$SELF")/assets/logo.png"
+    if [ -f "$src" ]; then cp "$src" "$icon"
+    elif [ ! -f "$icon" ]; then
+        curl -fsSL https://raw.githubusercontent.com/Riyoway/quickup/main/assets/logo.png -o "$icon" 2>/dev/null || true
+    fi
+    [ -f "$icon" ] && ICON="$icon"
+
     local integrated=()
     if is_mac; then
         install_macos "$target"; integrated+=("Finder Quick Actions")
@@ -216,12 +227,12 @@ install_dolphin() {
         printf "Actions="; for s in "${services[@]}"; do printf "%s;" "$s"; done; echo
         echo "X-KDE-Submenu=QuickUp"
         echo "X-KDE-Priority=TopLevel"
-        echo "Icon=go-up"
+        echo "Icon=$ICON"
         echo
         for s in "${services[@]}"; do
             echo "[Desktop Action $s]"
             echo "Name=$(display_of "$s")"
-            echo "Icon=go-up"
+            echo "Icon=$ICON"
             echo "Exec=\"$q\" upload $s %f"
             echo
         done
@@ -241,7 +252,7 @@ install_thunar() {
     {
         echo "<!-- quickup:begin -->"
         for s in "${services[@]}"; do
-            printf '<action><icon>go-up</icon><name>%s</name><submenu>QuickUp</submenu>' "$(display_of "$s")"
+            printf '<action><icon>%s</icon><name>%s</name><submenu>QuickUp</submenu>' "$ICON" "$(display_of "$s")"
             printf '<unique-id>quickup-%s</unique-id><command>&quot;%s&quot; upload %s %%f</command>' "$s" "$q" "$s"
             printf '<description>QuickUp</description><patterns>*</patterns>'
             printf '<other-files/><text-files/><image-files/><audio-files/><video-files/></action>\n'

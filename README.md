@@ -1,4 +1,8 @@
-# QuickUp
+<p align="center">
+  <img src="assets/logo.png" width="128" alt="QuickUp">
+</p>
+
+<h1 align="center">QuickUp</h1>
 
 Right-click any file in Windows Explorer, pick a host, and get a shareable URL
 copied to your clipboard. No app to keep running, no dependencies beyond the

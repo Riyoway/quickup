@@ -88,6 +88,21 @@ function Install-QuickUp {
         Copy-Item -LiteralPath $PSCommandPath -Destination $target -Force
     }
 
+    # Menu icon: use the bundled .ico when installing from the repo, otherwise
+    # fetch it once (best effort) so the one-line remote install still gets it.
+    $icon = Join-Path $installDir 'quickup.ico'
+    $srcIcon = Join-Path (Split-Path -Parent $PSCommandPath) 'assets\quickup.ico'
+    if (Test-Path -LiteralPath $srcIcon) {
+        Copy-Item -LiteralPath $srcIcon -Destination $icon -Force
+    }
+    elseif (-not (Test-Path -LiteralPath $icon)) {
+        try {
+            [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+            Invoke-WebRequest -UseBasicParsing -OutFile $icon `
+                -Uri 'https://raw.githubusercontent.com/Riyoway/quickup/main/assets/quickup.ico'
+        } catch { }
+    }
+
     # Always launch through Windows PowerShell so the menu works even if the
     # user installed from pwsh 7.
     $ps = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
@@ -97,6 +112,7 @@ function Install-QuickUp {
     [void][Microsoft.Win32.Registry]::CurrentUser.DeleteSubKeyTree($script:RegPath, $false)
     $root = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey($script:RegPath)
     $root.SetValue('MUIVerb', 'QuickUp')
+    if (Test-Path -LiteralPath $icon) { $root.SetValue('Icon', $icon) }
     $root.SetValue('SubCommands', '')  # empty + nested 'shell' key => cascade
     $root.Close()
 
