@@ -9,7 +9,7 @@ copied to your clipboard. No app to keep running, no dependencies beyond the
 PowerShell that already ships with Windows.
 
 <p align="center">
-  <img src="assets/screenshot.png" width="340" alt="QuickUp in the Explorer context menu">
+  <img src="assets/demo.gif" width="640" alt="QuickUp demo">
 </p>
 
 ## Install
