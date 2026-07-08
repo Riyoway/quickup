@@ -116,6 +116,102 @@ function Copy-Text {
     return $false
 }
 
+# --- modern UI (WPF, all built into Windows - no extra dependencies) --------
+
+function Initialize-Wpf {
+    Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, System.Xaml, System.Windows.Forms
+}
+
+# Colours follow the user's Windows light/dark setting; accent matches the icon.
+function Get-Theme {
+    $dark = $false
+    try {
+        $dark = ((Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' `
+                    -Name AppsUseLightTheme -ErrorAction Stop).AppsUseLightTheme -eq 0)
+    } catch { }
+    if ($dark) {
+        @{ Card = '#FF2B2B2B'; Text = '#FFF4F4F4'; Sub = '#FFA6A6A6'; Field = '#FF383838'
+           Accent = '#FF2F80ED'; AccentHover = '#FF4C93F0'; OnAccent = '#FFFFFFFF'; SecBorder = '#FF4A4A4A' }
+    } else {
+        @{ Card = '#FFFFFFFF'; Text = '#FF1B1B1B'; Sub = '#FF6A6A6A'; Field = '#FFF2F3F5'
+           Accent = '#FF2F80ED'; AccentHover = '#FF1F6FD8'; OnAccent = '#FFFFFFFF'; SecBorder = '#FFDADEE3' }
+    }
+}
+
+# Builds a borderless, rounded, shadowed card window around $Inner with themed
+# Primary/Secondary/Ghost button styles. Returns the loaded Window.
+function New-CardWindow {
+    param([int]$Width, [int]$Height, [string]$Inner, [hashtable]$T)
+    $xaml = @"
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        WindowStyle="None" AllowsTransparency="True" Background="Transparent" ResizeMode="NoResize"
+        Width="$Width" Height="$Height" FontFamily="Segoe UI" TextOptions.TextFormattingMode="Ideal"
+        WindowStartupLocation="CenterScreen" Topmost="True" ShowInTaskbar="False">
+  <Window.Resources>
+    <Style x:Key="Primary" TargetType="Button">
+      <Setter Property="Foreground" Value="$($T.OnAccent)"/><Setter Property="Background" Value="$($T.Accent)"/>
+      <Setter Property="Height" Value="34"/><Setter Property="Padding" Value="18,0"/><Setter Property="FontSize" Value="13"/><Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button">
+        <Border x:Name="b" CornerRadius="7" Background="{TemplateBinding Background}"><ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/></Border>
+        <ControlTemplate.Triggers>
+          <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="b" Property="Background" Value="$($T.AccentHover)"/></Trigger>
+          <Trigger Property="IsEnabled" Value="False"><Setter TargetName="b" Property="Opacity" Value="0.45"/></Trigger>
+        </ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter>
+    </Style>
+    <Style x:Key="Secondary" TargetType="Button">
+      <Setter Property="Foreground" Value="$($T.Text)"/><Setter Property="Background" Value="Transparent"/>
+      <Setter Property="Height" Value="34"/><Setter Property="Padding" Value="18,0"/><Setter Property="FontSize" Value="13"/><Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button">
+        <Border x:Name="b" CornerRadius="7" Background="{TemplateBinding Background}" BorderBrush="$($T.SecBorder)" BorderThickness="1"><ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/></Border>
+        <ControlTemplate.Triggers>
+          <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="b" Property="Background" Value="$($T.Field)"/></Trigger>
+          <Trigger Property="IsEnabled" Value="False"><Setter TargetName="b" Property="Opacity" Value="0.45"/></Trigger>
+        </ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter>
+    </Style>
+    <Style x:Key="Ghost" TargetType="Button">
+      <Setter Property="Foreground" Value="$($T.Sub)"/><Setter Property="Background" Value="Transparent"/>
+      <Setter Property="Width" Value="30"/><Setter Property="Height" Value="30"/><Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="FontFamily" Value="Segoe MDL2 Assets"/><Setter Property="FontSize" Value="11"/>
+      <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button">
+        <Border x:Name="b" CornerRadius="6" Background="{TemplateBinding Background}"><ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/></Border>
+        <ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="b" Property="Background" Value="$($T.Field)"/></Trigger></ControlTemplate.Triggers>
+      </ControlTemplate></Setter.Value></Setter>
+    </Style>
+  </Window.Resources>
+  <Border CornerRadius="12" Background="$($T.Card)" Margin="14">
+    <Border.Effect><DropShadowEffect BlurRadius="24" ShadowDepth="0" Opacity="0.28"/></Border.Effect>
+    $Inner
+  </Border>
+</Window>
+"@
+    [Windows.Markup.XamlReader]::Load([System.Xml.XmlNodeReader]::new([xml]$xaml))
+}
+
+# A simple themed card with a title, wrapped body text and an OK button.
+function Show-Message {
+    param([string]$Title, [string]$Body, [int]$Height = 210)
+    Initialize-Wpf
+    $T = Get-Theme
+    $inner = @"
+<Grid Margin="22">
+  <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+  <Grid x:Name="Header" Grid.Row="0" Background="Transparent">
+    <TextBlock Text="$([System.Security.SecurityElement]::Escape($Title))" FontWeight="SemiBold" FontSize="15" Foreground="$($T.Text)" VerticalAlignment="Center"/>
+    <Button x:Name="Close" Style="{StaticResource Ghost}" Content="&#xE10A;" HorizontalAlignment="Right"/>
+  </Grid>
+  <TextBlock x:Name="Body" Grid.Row="1" TextWrapping="Wrap" FontSize="13" Foreground="$($T.Sub)" Margin="0,12,0,0" VerticalAlignment="Top"/>
+  <Button x:Name="Ok" Grid.Row="2" Style="{StaticResource Primary}" Content="OK" HorizontalAlignment="Right" MinWidth="88" Margin="0,14,0,0"/>
+</Grid>
+"@
+    $win = New-CardWindow -Width 460 -Height $Height -Inner $inner -T $T
+    $win.FindName('Body').Text = $Body
+    $win.FindName('Header').Add_MouseLeftButtonDown({ $win.DragMove() }.GetNewClosure())
+    $win.FindName('Close').Add_Click({ $win.Close() }.GetNewClosure())
+    $win.FindName('Ok').Add_Click({ $win.Close() }.GetNewClosure())
+    [void]$win.ShowDialog()
+}
+
 # Endpoint definitions. Every one of these hosts returns the plain-text URL
 # as the whole response body, so completion handling is uniform.
 function Get-ServiceRequest {
@@ -271,7 +367,7 @@ function Invoke-UploadUI {
     if (-not $script:Services.Contains($Service)) { throw "Unknown service '$Service'." }
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { throw "File not found: $Path" }
 
-    Add-Type -AssemblyName System.Windows.Forms
+    Initialize-Wpf
 
     # Refuse a file this host can't take, and point at the ones that can.
     $reason = Test-Supported -Service $Service -Path $Path
@@ -279,11 +375,10 @@ function Invoke-UploadUI {
         $ok = @(Get-SupportingServices -Path $Path)
         $suggest = if ($ok.Count) { "This file works with:`r`n  - " + ($ok -join "`r`n  - ") }
                    else { 'None of the configured hosts accept this file.' }
-        [void][System.Windows.Forms.MessageBox]::Show("$reason`r`n`r`n$suggest", 'QuickUp', 'OK', 'Warning')
+        Show-Message -Title 'File not supported' -Body "$reason`r`n`r`n$suggest" -Height 226
         return
     }
 
-    Add-Type -AssemblyName System.Drawing
     Add-Type -AssemblyName System.Net.Http
     [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
 
@@ -333,75 +428,83 @@ namespace QuickUp {
     $task = $client.PostAsync($req.Uri, $content)
 
     $state = [pscustomobject]@{ Url = $null }
+    $T = Get-Theme
+    $inner = @"
+<Grid Margin="22">
+  <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+  <Grid x:Name="Header" Grid.Row="0" Background="Transparent">
+    <StackPanel Orientation="Horizontal">
+      <Image x:Name="Fav" Width="18" Height="18" Margin="0,0,9,0" VerticalAlignment="Center"/>
+      <TextBlock Text="QuickUp" FontWeight="SemiBold" FontSize="14" Foreground="$($T.Text)" VerticalAlignment="Center"/>
+    </StackPanel>
+    <Button x:Name="Close" Style="{StaticResource Ghost}" Content="&#xE10A;" HorizontalAlignment="Right"/>
+  </Grid>
+  <StackPanel Grid.Row="1" VerticalAlignment="Center" Margin="0,16">
+    <TextBlock x:Name="Status" FontSize="13" Foreground="$($T.Text)" TextTrimming="CharacterEllipsis" Margin="0,0,0,12"/>
+    <ProgressBar x:Name="Bar" Height="6" Minimum="0" Maximum="100" Foreground="$($T.Accent)" Background="$($T.Field)" BorderThickness="0"/>
+    <Border x:Name="UrlWrap" CornerRadius="7" Background="$($T.Field)" Padding="12,9" Margin="0,2,0,0" Visibility="Collapsed">
+      <TextBox x:Name="Url" IsReadOnly="True" BorderThickness="0" Background="Transparent" Foreground="$($T.Text)" FontFamily="Consolas" FontSize="12"/>
+    </Border>
+  </StackPanel>
+  <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right">
+    <Button x:Name="Open" Style="{StaticResource Secondary}" Content="Open" Margin="0,0,8,0" IsEnabled="False" MinWidth="84"/>
+    <Button x:Name="Copy" Style="{StaticResource Primary}" Content="Copy" IsEnabled="False" MinWidth="96"/>
+  </StackPanel>
+</Grid>
+"@
+    $win = New-CardWindow -Width 468 -Height 216 -Inner $inner -T $T
+    $status = $win.FindName('Status'); $bar = $win.FindName('Bar')
+    $urlWrap = $win.FindName('UrlWrap'); $urlBox = $win.FindName('Url')
+    $btnCopy = $win.FindName('Copy'); $btnOpen = $win.FindName('Open')
 
-    $form = [System.Windows.Forms.Form]@{
-        Text = 'QuickUp'; ClientSize = [System.Drawing.Size]::new(444, 150)
-        StartPosition = 'CenterScreen'; FormBorderStyle = 'FixedDialog'
-        MaximizeBox = $false; MinimizeBox = $false; TopMost = $true
-    }
-    $label = [System.Windows.Forms.Label]@{
-        Location = [System.Drawing.Point]::new(12, 12); Size = [System.Drawing.Size]::new(420, 36)
-        Text = "Uploading `"$fileName`" to $displayName ..."
-    }
-    $bar = [System.Windows.Forms.ProgressBar]@{
-        Style = 'Continuous'; Minimum = 0; Maximum = 100
-        Location = [System.Drawing.Point]::new(12, 56); Size = [System.Drawing.Size]::new(420, 20)
-    }
-    $box = [System.Windows.Forms.TextBox]@{
-        ReadOnly = $true; Visible = $false
-        Location = [System.Drawing.Point]::new(12, 56); Size = [System.Drawing.Size]::new(420, 24)
-    }
-    $btnCopy = [System.Windows.Forms.Button]@{
-        Text = 'Copy'; Enabled = $false
-        Location = [System.Drawing.Point]::new(12, 104); Size = [System.Drawing.Size]::new(96, 30)
-    }
-    $btnOpen = [System.Windows.Forms.Button]@{
-        Text = 'Open'; Enabled = $false
-        Location = [System.Drawing.Point]::new(116, 104); Size = [System.Drawing.Size]::new(96, 30)
-    }
-    $btnClose = [System.Windows.Forms.Button]@{
-        Text = 'Close'; DialogResult = [System.Windows.Forms.DialogResult]::Cancel
-        Location = [System.Drawing.Point]::new(336, 104); Size = [System.Drawing.Size]::new(96, 30)
-    }
-    $form.Controls.AddRange(@($label, $bar, $box, $btnCopy, $btnOpen, $btnClose))
-    $form.CancelButton = $btnClose
+    try {
+        $favPath = Join-Path $env:LOCALAPPDATA "QuickUp\icons\$Service.ico"
+        if (-not (Test-Path -LiteralPath $favPath)) { $favPath = Join-Path $env:LOCALAPPDATA 'QuickUp\quickup.ico' }
+        if (Test-Path -LiteralPath $favPath) {
+            $bmp = [System.Windows.Media.Imaging.BitmapImage]::new()
+            $bmp.BeginInit(); $bmp.CacheOption = 'OnLoad'; $bmp.UriSource = [Uri]$favPath; $bmp.EndInit()
+            $win.FindName('Fav').Source = $bmp
+        }
+    } catch { }
 
-    $btnCopy.Add_Click({
-        if ($state.Url) { $btnCopy.Text = if (Copy-Text $state.Url) { 'Copied!' } else { 'Copy failed' } }
-    }.GetNewClosure())
+    $status.Text = "Uploading `"$fileName`" to $displayName"
+    $win.FindName('Header').Add_MouseLeftButtonDown({ $win.DragMove() }.GetNewClosure())
+    $win.FindName('Close').Add_Click({ $win.Close() }.GetNewClosure())
     $btnOpen.Add_Click({ if ($state.Url) { Start-Process $state.Url } }.GetNewClosure())
+    $btnCopy.Add_Click({ if ($state.Url) { $btnCopy.Content = if (Copy-Text $state.Url) { 'Copied' } else { 'Copy failed' } } }.GetNewClosure())
 
-    $timer = [System.Windows.Forms.Timer]@{ Interval = 150 }
+    $timer = [System.Windows.Threading.DispatcherTimer]::new()
+    $timer.Interval = [TimeSpan]::FromMilliseconds(120)
     $timer.Add_Tick({
         if (-not $task.IsCompleted) {
             if ($total -gt 0) {
                 $pct = [int][Math]::Min(100, [Math]::Floor($stream.Sent * 100 / $total))
                 $bar.Value = $pct
-                $label.Text = "Uploading `"$fileName`" to $displayName ...  $pct%"
+                $status.Text = "Uploading `"$fileName`" to $displayName   $pct%"
             }
             return
         }
         $bar.Value = 100
         $timer.Stop()
-        $bar.Visible = $false
-        $box.Visible = $true
         try {
             $resp = $task.GetAwaiter().GetResult()
             $body = $resp.Content.ReadAsStringAsync().GetAwaiter().GetResult().Trim()
             if (-not $resp.IsSuccessStatusCode) { throw "HTTP $([int]$resp.StatusCode): $body" }
             if ($body -notmatch '^https?://\S+$') { throw "Unexpected response: $body" }
             $state.Url = $body
-            $label.Text = "Uploaded to $displayName :"
-            $box.Text = $body
-            $box.SelectAll()
-            $btnCopy.Enabled = $true; $btnOpen.Enabled = $true
+            $status.Text = "Uploaded to $displayName"
+            $bar.Visibility = 'Collapsed'
+            $urlBox.Text = $body; $urlWrap.Visibility = 'Visible'
+            $urlBox.Focus(); $urlBox.SelectAll()
+            $btnCopy.IsEnabled = $true; $btnOpen.IsEnabled = $true
             # Copy last: a clipboard lock must not turn a good upload into an error.
-            $btnCopy.Text = if (Copy-Text $body) { 'Copied!' } else { 'Copy' }
+            $btnCopy.Content = if (Copy-Text $body) { 'Copied' } else { 'Copy' }
         }
         catch {
-            $label.Text = 'Upload failed:'
-            $box.ForeColor = [System.Drawing.Color]::Firebrick
-            $box.Text = $_.Exception.Message
+            $status.Text = 'Upload failed'
+            $bar.Visibility = 'Collapsed'
+            $urlBox.Foreground = [System.Windows.Media.Brushes]::IndianRed
+            $urlBox.Text = $_.Exception.Message; $urlWrap.Visibility = 'Visible'
         }
         finally {
             $stream.Dispose(); $content.Dispose(); $client.Dispose()
@@ -409,38 +512,43 @@ namespace QuickUp {
     }.GetNewClosure())
 
     $timer.Start()
-    [void]$form.ShowDialog()
-    $timer.Dispose(); $form.Dispose()
+    [void]$win.ShowDialog()
+    $timer.Stop()
 }
 
 function Invoke-About {
-    Add-Type -AssemblyName System.Windows.Forms
-    Add-Type -AssemblyName System.Drawing
-    $form = [System.Windows.Forms.Form]@{
-        Text = 'QuickUp - what each host accepts'
-        ClientSize = [System.Drawing.Size]::new(580, 320)
-        StartPosition = 'CenterScreen'; FormBorderStyle = 'FixedDialog'
-        MaximizeBox = $false; MinimizeBox = $false
+    Initialize-Wpf
+    $T = Get-Theme
+    $inner = @"
+<Grid Margin="22">
+  <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+  <Grid x:Name="Header" Grid.Row="0" Background="Transparent">
+    <TextBlock Text="What each host accepts" FontWeight="SemiBold" FontSize="15" Foreground="$($T.Text)" VerticalAlignment="Center"/>
+    <Button x:Name="Close" Style="{StaticResource Ghost}" Content="&#xE10A;" HorizontalAlignment="Right"/>
+  </Grid>
+  <StackPanel x:Name="List" Grid.Row="1" Margin="0,16,0,0"/>
+  <Grid Grid.Row="2" Margin="0,14,0,0">
+    <TextBlock Text="Unsupported files are refused before upload." FontSize="11" Foreground="$($T.Sub)" VerticalAlignment="Center"/>
+    <Button x:Name="Ok" Style="{StaticResource Primary}" Content="OK" HorizontalAlignment="Right" MinWidth="88"/>
+  </Grid>
+</Grid>
+"@
+    $win = New-CardWindow -Width 520 -Height 344 -Inner $inner -T $T
+    $list = $win.FindName('List')
+    $conv = [System.Windows.Media.BrushConverter]::new()
+    $accent = $conv.ConvertFromString($T.Accent); $sub = $conv.ConvertFromString($T.Sub)
+    foreach ($svc in $script:Services.Keys) {
+        $name = [System.Windows.Controls.TextBlock]::new()
+        $name.Text = $script:Services[$svc]; $name.FontWeight = 'SemiBold'; $name.FontSize = 13; $name.Foreground = $accent
+        $desc = [System.Windows.Controls.TextBlock]::new()
+        $desc.Text = $script:Limits[$svc].Accept; $desc.FontSize = 12; $desc.Foreground = $sub
+        $desc.TextWrapping = 'Wrap'; $desc.Margin = [System.Windows.Thickness]::new(0, 2, 0, 14)
+        [void]$list.Children.Add($name); [void]$list.Children.Add($desc)
     }
-    $box = [System.Windows.Forms.TextBox]@{
-        Multiline = $true; ReadOnly = $true; WordWrap = $false; ScrollBars = 'Vertical'
-        Font = [System.Drawing.Font]::new('Consolas', 9)
-        Location = [System.Drawing.Point]::new(12, 12); Size = [System.Drawing.Size]::new(556, 258)
-    }
-    $lines = foreach ($svc in $script:Services.Keys) {
-        ('{0}' -f $script:Services[$svc]), ('    {0}' -f $script:Limits[$svc].Accept), ''
-    }
-    $box.Text = (($lines -join "`r`n") +
-        "`r`nPick a host and the upload starts at once. A file a host can't take" +
-        "`r`nis refused before uploading, with a working host suggested.")
-    $btn = [System.Windows.Forms.Button]@{
-        Text = 'OK'; DialogResult = [System.Windows.Forms.DialogResult]::OK
-        Location = [System.Drawing.Point]::new(476, 280); Size = [System.Drawing.Size]::new(92, 28)
-    }
-    $form.Controls.AddRange(@($box, $btn))
-    $form.AcceptButton = $btn
-    [void]$form.ShowDialog()
-    $form.Dispose()
+    $win.FindName('Header').Add_MouseLeftButtonDown({ $win.DragMove() }.GetNewClosure())
+    $win.FindName('Close').Add_Click({ $win.Close() }.GetNewClosure())
+    $win.FindName('Ok').Add_Click({ $win.Close() }.GetNewClosure())
+    [void]$win.ShowDialog()
 }
 
 function Invoke-SelfTest {
