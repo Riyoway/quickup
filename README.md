@@ -4,9 +4,9 @@
 
 <h1 align="center">QuickUp</h1>
 
-Right-click any file in Windows Explorer, pick a host, and get a shareable URL
-copied to your clipboard. No app to keep running, no dependencies beyond the
-PowerShell that already ships with Windows.
+Right-click a file, pick a host, and QuickUp uploads it and copies the link to
+your clipboard. It runs on the PowerShell already built into Windows, and
+nothing stays running in the background.
 
 <p align="center">
   <img src="assets/demo.gif" width="640" alt="QuickUp demo">
@@ -14,23 +14,23 @@ PowerShell that already ships with Windows.
 
 ## Install
 
-### Windows — easiest (no PowerShell needed)
+### Windows
 
-Download **[QuickUp-Installer.bat](https://github.com/Riyoway/quickup/releases/latest/download/QuickUp-Installer.bat)**
-from the [latest release](https://github.com/Riyoway/quickup/releases/latest) and
-double-click it. Then right-click any file and choose **QuickUp**.
+Two ways to the same result:
 
-To remove it: right-click a file → QuickUp → **Uninstall QuickUp** (or run
-`QuickUp-Uninstaller.bat`).
+- **Double-click.** Download [QuickUp-Installer.bat](https://github.com/Riyoway/quickup/releases/latest/download/QuickUp-Installer.bat)
+  from the [latest release](https://github.com/Riyoway/quickup/releases/latest) and run it.
+  Windows may warn about an unknown file — click *More info → Run anyway*.
+- **Terminal**, if you know your way around one — it's the quicker route:
 
-### Windows — one-liner
+  ```powershell
+  irm https://apps.riyo.me/install/quickup.ps1 | iex
+  ```
 
-```powershell
-irm https://apps.riyo.me/install/quickup.ps1 | iex
-```
-
-The installer copies the script to `%LOCALAPPDATA%\QuickUp` and adds a per-user
-context-menu entry (`HKCU`, no administrator rights needed).
+Both do the same thing (the batch just runs the same PowerShell for you), so use
+whichever you like. It installs to `%LOCALAPPDATA%\QuickUp` and adds a per-user
+right-click entry — no admin rights. To remove it later: right-click a file →
+QuickUp → **Uninstall QuickUp**, or run `QuickUp-Uninstaller.bat`.
 
 ### macOS / Linux
 
@@ -48,11 +48,11 @@ macOS); clipboard uses `wl-copy`, `xclip`, or `xsel`.
 
 ## Use
 
-Right-click a file → **QuickUp** → choose a host. The upload starts at once and
-a small dialog shows the URL, already on your clipboard. **Copy** re-copies it,
-**Open** launches it in your browser. **About** in the submenu lists what each
-host accepts. A file a host can't take (too big, or a blocked type) is refused
-before uploading, with a host that *does* accept it suggested.
+Right-click a file → **QuickUp** → pick a host. It uploads right away and shows
+the link, already copied. **Copy** copies it again, **Open** opens it in your
+browser, and **About** lists what each host allows. If a host can't take the
+file — too big, or a blocked type — QuickUp says so before uploading and points
+you to one that can.
 
 ## Hosts
 
@@ -63,9 +63,9 @@ before uploading, with a host that *does* accept it suggested.
 | Litterbox | 1 hour                    | 1 GB     | `.exe .scr .cpl .doc .docx .jar`       |
 | Uguu      | 3 hours                   | 128 MB   | executables, scripts, `.html .svg .jar .apk` |
 
-Files are sent directly to the third-party host you pick; nothing is proxied.
-Public hosts come and go — if one is unreachable or blocks your network, pick
-another.
+Files go straight to the host you pick — nothing passes through a server of
+ours. These are public services, so now and then one is down or blocks your
+network; just pick another.
 
 ## Update
 
