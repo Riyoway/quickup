@@ -42,16 +42,18 @@ macOS); clipboard uses `wl-copy`, `xclip`, or `xsel`.
 
 Right-click a file → **QuickUp** → choose a host. The upload starts at once and
 a small dialog shows the URL, already on your clipboard. **Copy** re-copies it,
-**Open** launches it in your browser.
+**Open** launches it in your browser. **About** in the submenu lists what each
+host accepts. A file a host can't take (too big, or a blocked type) is refused
+before uploading, with a host that *does* accept it suggested.
 
 ## Hosts
 
-| Host      | Retention        |
-| --------- | ---------------- |
-| Catbox    | permanent        |
-| x0.at     | up to 1 year     |
-| Litterbox | 1 hour           |
-| Uguu      | 48 hours         |
+| Host      | Retention                 | Max size | Blocked types                          |
+| --------- | ------------------------- | -------- | -------------------------------------- |
+| Catbox    | permanent                 | 200 MB   | `.exe .scr .cpl .doc .docx .jar`       |
+| x0.at     | 3–100 days (smaller lasts longer) | 1 GB | none                             |
+| Litterbox | 1 hour                    | 1 GB     | `.exe .scr .cpl .doc .docx .jar`       |
+| Uguu      | 3 hours                   | 128 MB   | executables, scripts, `.html .svg .jar .apk` |
 
 Files are sent directly to the third-party host you pick; nothing is proxied.
 Public hosts come and go — if one is unreachable or blocks your network, pick

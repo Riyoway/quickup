@@ -17,7 +17,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('install', 'uninstall', 'update', 'upload', 'selftest')]
+    [ValidateSet('install', 'uninstall', 'update', 'upload', 'about', 'selftest')]
     [string]$Command = 'install',
 
     [Parameter(Position = 1)]
@@ -32,9 +32,52 @@ $ErrorActionPreference = 'Stop'
 # Display name shown in the submenu and the result dialog, in menu order.
 $script:Services = [ordered]@{
     'catbox'    = 'Catbox (permanent)'
-    'x0'        = 'x0.at (up to 1 year)'
+    'x0'        = 'x0.at (up to 100 days)'
     'litterbox' = 'Litterbox (1 hour)'
-    'uguu'      = 'Uguu (48 hours)'
+    'uguu'      = 'Uguu (3 hours)'
+}
+
+# What each host actually accepts (from their docs/config): size cap in bytes
+# and blocked extensions. Used by the About dialog and to refuse an unsupported
+# file before uploading. Litterbox shares Catbox's ban list (same operator).
+$script:Limits = [ordered]@{
+    catbox    = @{ Max = 200MB;  Banned = @('exe', 'scr', 'cpl', 'doc', 'docx', 'docm', 'jar')
+                   Accept = 'Permanent  |  max 200 MB  |  blocked: .exe .scr .cpl .doc .docx .jar' }
+    x0        = @{ Max = 1024MB; Banned = @()
+                   Accept = 'Kept 3-100 days (smaller lasts longer)  |  max 1 GB  |  any file type' }
+    litterbox = @{ Max = 1024MB; Banned = @('exe', 'scr', 'cpl', 'doc', 'docx', 'docm', 'jar')
+                   Accept = 'Temporary 1 hour  |  max 1 GB  |  blocked: .exe .scr .cpl .doc .docx .jar' }
+    uguu      = @{ Max = 128MB;  Banned = @('exe', 'scr', 'com', 'vbs', 'bat', 'cmd', 'htm', 'html', 'jar', 'msi', 'apk', 'phtml', 'svg')
+                   Accept = 'Temporary 3 hours  |  max 128 MB  |  blocked: executables, scripts, .html, .svg, .jar, .apk' }
+}
+
+function Format-Size {
+    param([long]$Bytes)
+    if ($Bytes -ge 1GB) { return ('{0:0.#} GB' -f ($Bytes / 1GB)) }
+    if ($Bytes -ge 1MB) { return ('{0:0} MB' -f ($Bytes / 1MB)) }
+    if ($Bytes -ge 1KB) { return ('{0:0} KB' -f ($Bytes / 1KB)) }
+    return "$Bytes B"
+}
+
+# $null when $Service accepts $Path, otherwise a human reason why it doesn't.
+function Test-Supported {
+    param([string]$Service, [string]$Path)
+    $lim = $script:Limits[$Service]
+    if (-not $lim) { return $null }
+    $ext = ([System.IO.Path]::GetExtension($Path)).TrimStart('.').ToLowerInvariant()
+    if ($lim.Banned -contains $ext) { return "$($script:Services[$Service]) does not accept .$ext files." }
+    $size = (Get-Item -LiteralPath $Path).Length
+    if ($size -gt $lim.Max) {
+        return ('File is {0}; {1} accepts up to {2}.' -f (Format-Size $size), $script:Services[$Service], (Format-Size $lim.Max))
+    }
+    return $null
+}
+
+function Get-SupportingServices {
+    param([string]$Path)
+    $script:Services.Keys |
+        Where-Object { -not (Test-Supported -Service $_ -Path $Path) } |
+        ForEach-Object { $script:Services[$_] }
 }
 
 $script:UserAgent = 'QuickUp/1.0 (+https://github.com/Riyoway/quickup)'
@@ -173,9 +216,11 @@ function Install-QuickUp {
         New-MenuItem ('{0:D2}_{1}' -f $order, $svc) $script:Services[$svc] "$hidden upload $svc `"%1`"" $svcIcon[$svc]
         $order += 10
     }
-    # 0x20 = ECF_SEPARATORBEFORE: draws a line above Update, splitting the
-    # hosts from the management actions.
-    New-MenuItem '80_update'    'Update QuickUp'    "$visible update"    $icon 0x20
+    # 0x20 = ECF_SEPARATORBEFORE: a line splitting the hosts from the info /
+    # management items. About opens a dialog (hidden launcher); Update and
+    # Uninstall print to a visible console.
+    New-MenuItem '70_about'     'About QuickUp'     "$hidden about"      $icon 0x20
+    New-MenuItem '80_update'    'Update QuickUp'    "$visible update"    $icon
     New-MenuItem '90_uninstall' 'Uninstall QuickUp' "$visible uninstall" $icon
 
     Write-Banner 'INSTALLED'
@@ -184,7 +229,7 @@ function Install-QuickUp {
     Write-Host ''
     Write-Field 'Use'   'Right-click a file  ->  QuickUp  ->  pick a host'
     Write-Field 'Hosts' ($script:Services.Values -join '  |  ')
-    Write-Field 'Menu'  'Update / Uninstall are in the submenu too'
+    Write-Field 'Menu'  'About / Update / Uninstall are in the submenu too'
     Write-Field 'Script' $target
     Write-Host ''
     Write-Host '  Uninstall anytime:' -ForegroundColor DarkGray
@@ -227,6 +272,17 @@ function Invoke-UploadUI {
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { throw "File not found: $Path" }
 
     Add-Type -AssemblyName System.Windows.Forms
+
+    # Refuse a file this host can't take, and point at the ones that can.
+    $reason = Test-Supported -Service $Service -Path $Path
+    if ($reason) {
+        $ok = @(Get-SupportingServices -Path $Path)
+        $suggest = if ($ok.Count) { "This file works with:`r`n  - " + ($ok -join "`r`n  - ") }
+                   else { 'None of the configured hosts accept this file.' }
+        [void][System.Windows.Forms.MessageBox]::Show("$reason`r`n`r`n$suggest", 'QuickUp', 'OK', 'Warning')
+        return
+    }
+
     Add-Type -AssemblyName System.Drawing
     Add-Type -AssemblyName System.Net.Http
     [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
@@ -357,11 +413,43 @@ namespace QuickUp {
     $timer.Dispose(); $form.Dispose()
 }
 
+function Invoke-About {
+    Add-Type -AssemblyName System.Windows.Forms
+    Add-Type -AssemblyName System.Drawing
+    $form = [System.Windows.Forms.Form]@{
+        Text = 'QuickUp - what each host accepts'
+        ClientSize = [System.Drawing.Size]::new(580, 320)
+        StartPosition = 'CenterScreen'; FormBorderStyle = 'FixedDialog'
+        MaximizeBox = $false; MinimizeBox = $false
+    }
+    $box = [System.Windows.Forms.TextBox]@{
+        Multiline = $true; ReadOnly = $true; WordWrap = $false; ScrollBars = 'Vertical'
+        Font = [System.Drawing.Font]::new('Consolas', 9)
+        Location = [System.Drawing.Point]::new(12, 12); Size = [System.Drawing.Size]::new(556, 258)
+    }
+    $lines = foreach ($svc in $script:Services.Keys) {
+        ('{0}' -f $script:Services[$svc]), ('    {0}' -f $script:Limits[$svc].Accept), ''
+    }
+    $box.Text = (($lines -join "`r`n") +
+        "`r`nPick a host and the upload starts at once. A file a host can't take" +
+        "`r`nis refused before uploading, with a working host suggested.")
+    $btn = [System.Windows.Forms.Button]@{
+        Text = 'OK'; DialogResult = [System.Windows.Forms.DialogResult]::OK
+        Location = [System.Drawing.Point]::new(476, 280); Size = [System.Drawing.Size]::new(92, 28)
+    }
+    $form.Controls.AddRange(@($box, $btn))
+    $form.AcceptButton = $btn
+    [void]$form.ShowDialog()
+    $form.Dispose()
+}
+
 function Invoke-SelfTest {
     foreach ($svc in $script:Services.Keys) {
         $r = Get-ServiceRequest -Service $svc
         if ($r.Uri -notmatch '^https://') { throw "SELFTEST: $svc endpoint is not https." }
         if (-not $r.FileField) { throw "SELFTEST: $svc has no file field." }
+        if (-not $script:Limits.Contains($svc)) { throw "SELFTEST: $svc has no limits entry." }
+        if ($script:Limits[$svc].Max -le 0) { throw "SELFTEST: $svc max size invalid." }
     }
     if ('https://a.b/c' -notmatch '^https?://\S+$') { throw 'SELFTEST: valid URL rejected.' }
     if ('some error text' -match '^https?://\S+$') { throw 'SELFTEST: error text accepted as URL.' }
@@ -373,5 +461,6 @@ switch ($Command) {
     'uninstall' { Uninstall-QuickUp }
     'update'    { Update-QuickUp }
     'upload'    { Invoke-UploadUI -Service $Service -Path $Path }
+    'about'     { Invoke-About }
     'selftest'  { Invoke-SelfTest }
 }

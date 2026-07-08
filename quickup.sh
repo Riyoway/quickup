@@ -68,11 +68,66 @@ host_list() {
 display_of() {
     case "$1" in
         catbox)    echo "Catbox (permanent)" ;;
-        x0)        echo "x0.at (up to 1 year)" ;;
+        x0)        echo "x0.at (up to 100 days)" ;;
         litterbox) echo "Litterbox (1 hour)" ;;
-        uguu)      echo "Uguu (48 hours)" ;;
+        uguu)      echo "Uguu (3 hours)" ;;
         *)         return 1 ;;
     esac
+}
+
+# What each host accepts (from their docs/config): size cap in bytes, blocked
+# extensions, and a one-line About summary. Litterbox shares Catbox's ban list.
+svc_max_bytes() {
+    case "$1" in
+        catbox)    echo 209715200 ;;    # 200 MB
+        x0)        echo 1073741824 ;;   # 1024 MiB
+        litterbox) echo 1073741824 ;;   # 1 GB
+        uguu)      echo 134217728 ;;    # 128 MiB
+    esac
+}
+svc_banned() {
+    case "$1" in
+        catbox|litterbox) echo "exe scr cpl doc docx docm jar" ;;
+        uguu)             echo "exe scr com vbs bat cmd htm html jar msi apk phtml svg" ;;
+        *)                echo "" ;;
+    esac
+}
+svc_accept() {
+    case "$1" in
+        catbox)    echo "Permanent  |  max 200 MB  |  blocked: .exe .scr .cpl .doc .docx .jar" ;;
+        x0)        echo "Kept 3-100 days (smaller lasts longer)  |  max 1 GB  |  any file type" ;;
+        litterbox) echo "Temporary 1 hour  |  max 1 GB  |  blocked: .exe .scr .cpl .doc .docx .jar" ;;
+        uguu)      echo "Temporary 3 hours  |  max 128 MB  |  blocked: executables, scripts, .html, .svg, .jar, .apk" ;;
+    esac
+}
+
+file_size() { stat -c%s "$1" 2>/dev/null || stat -f%z "$1" 2>/dev/null; }
+fmt_size() {
+    if   [ "$1" -ge 1073741824 ]; then awk "BEGIN{printf \"%.1f GB\", $1/1073741824}"
+    elif [ "$1" -ge 1048576 ];    then echo "$(( $1 / 1048576 )) MB"
+    elif [ "$1" -ge 1024 ];       then echo "$(( $1 / 1024 )) KB"
+    else echo "$1 B"; fi
+}
+
+# Prints a reason when $1 can't take file $2; prints nothing when it can.
+test_supported() {
+    local svc="$1" file="$2" ext=""
+    case "$(basename "$file")" in *.*) ext="$(printf '%s' "${file##*.}" | tr '[:upper:]' '[:lower:]')" ;; esac
+    case " $(svc_banned "$svc") " in
+        *" $ext "*) printf '%s does not accept .%s files.' "$(display_of "$svc")" "$ext"; return ;;
+    esac
+    local size max; size="$(file_size "$file")"; max="$(svc_max_bytes "$svc")"
+    if [ -n "$size" ] && [ "$size" -gt "$max" ]; then
+        printf 'File is %s; %s accepts up to %s.' "$(fmt_size "$size")" "$(display_of "$svc")" "$(fmt_size "$max")"
+    fi
+}
+supporting_services() {
+    local s r out=""
+    for s in "${services[@]}"; do
+        r="$(test_supported "$s" "$1")"
+        [ -z "$r" ] && out="$out  - $(display_of "$s")"$'\n'
+    done
+    printf '%s' "$out"
 }
 
 # Uploads $2 to service $1, echoing the plain-text URL the host returns.
@@ -140,6 +195,15 @@ cmd_upload() {
     [ -f "$file" ] || { show_err "File not found: $file"; return 1; }
     command -v curl >/dev/null 2>&1 || { show_err "curl is required but not installed."; return 1; }
 
+    # Refuse a file this host can't take, and point at the ones that can.
+    local reason; reason="$(test_supported "$svc" "$file")"
+    if [ -n "$reason" ]; then
+        local ok; ok="$(supporting_services "$file")"
+        if [ -n "$ok" ]; then show_err "$reason"$'\n\n'"This file works with:"$'\n'"$ok"
+        else show_err "$reason"$'\n\n'"None of the configured hosts accept this file."; fi
+        return 1
+    fi
+
     local url
     if ! url=$(upload_of "$svc" "$file" | tr -d '\r' | tail -n1); then
         show_err "Upload failed (host rejected the request)."
@@ -150,6 +214,19 @@ cmd_upload() {
         http://*|https://*) copy_clip "$url"; show_ok "$(display_of "$svc")" "$url" ;;
         *) show_err "Unexpected response: $url" ;;
     esac
+}
+
+cmd_about() {
+    local text="QuickUp - what each host accepts"$'\n\n' s
+    for s in "${services[@]}"; do
+        text="$text$(display_of "$s")"$'\n'"    $(svc_accept "$s")"$'\n\n'
+    done
+    text="${text}A file a host can't take is refused before upload, with a working host suggested."
+    if   [ -t 1 ]; then printf '%s\n' "$text"
+    elif is_mac; then osascript -e "display dialog \"$text\" buttons {\"OK\"} default button \"OK\" with title \"QuickUp\"" >/dev/null 2>&1 || true
+    elif command -v zenity  >/dev/null 2>&1; then zenity --info --no-wrap --title=QuickUp --text="$text" >/dev/null 2>&1 || true
+    elif command -v kdialog >/dev/null 2>&1; then kdialog --title QuickUp --msgbox "$text" >/dev/null 2>&1 || true
+    else printf '%s\n' "$text"; fi
 }
 
 # Resolve a per-service favicon (bundled or fetched), echoing its path; falls
@@ -244,7 +321,10 @@ cmd_update() {
 
 cmd_selftest() {
     local ok=1
-    for s in "${services[@]}"; do display_of "$s" >/dev/null || { echo "no display for $s"; ok=0; }; done
+    for s in "${services[@]}"; do
+        display_of "$s" >/dev/null || { echo "no display for $s"; ok=0; }
+        [ -n "$(svc_max_bytes "$s")" ] || { echo "no size limit for $s"; ok=0; }
+    done
     case "https://a.b/c" in http://*|https://*) ;; *) ok=0 ;; esac
     case "some error text" in http://*|https://*) ok=0 ;; esac
     command -v curl >/dev/null 2>&1 || echo "warning: curl not found on PATH"
@@ -269,6 +349,7 @@ EOF
         chmod +x "$base/$(display_of "$s")"
     done
     # Management entries (Nautilus scripts have no icons or separators).
+    printf '#!/usr/bin/env bash\n"%s" about\n'     "$q" > "$base/About QuickUp";     chmod +x "$base/About QuickUp"
     printf '#!/usr/bin/env bash\n"%s" update\n'    "$q" > "$base/Update QuickUp";    chmod +x "$base/Update QuickUp"
     printf '#!/usr/bin/env bash\n"%s" uninstall\n' "$q" > "$base/Uninstall QuickUp"; chmod +x "$base/Uninstall QuickUp"
 }
@@ -282,7 +363,7 @@ install_dolphin() {
         echo "[Desktop Entry]"
         echo "Type=Service"
         echo "MimeType=all/allfiles;"
-        printf "Actions="; for s in "${services[@]}"; do printf "%s;" "$s"; done; printf "update;uninstall;\n"
+        printf "Actions="; for s in "${services[@]}"; do printf "%s;" "$s"; done; printf "about;update;uninstall;\n"
         echo "X-KDE-Submenu=QuickUp"
         echo "X-KDE-Priority=TopLevel"
         echo "Icon=$ICON"
@@ -294,8 +375,13 @@ install_dolphin() {
             echo "Exec=\"$q\" upload $s %f"
             echo
         done
-        # Dolphin submenus have no separator, so the management items just
+        # Dolphin submenus have no separator, so the info/management items just
         # follow the hosts.
+        echo "[Desktop Action about]"
+        echo "Name=About QuickUp"
+        echo "Icon=$ICON"
+        echo "Exec=\"$q\" about"
+        echo
         echo "[Desktop Action update]"
         echo "Name=Update QuickUp"
         echo "Icon=$ICON"
@@ -327,6 +413,9 @@ install_thunar() {
             printf '<unique-id>quickup-%s</unique-id><command>&quot;%s&quot; upload %s %%f</command>' "$s" "$q" "$s"
             printf '<description>QuickUp</description><patterns>*</patterns>%s</action>\n' "$types"
         done
+        printf '<action><icon>%s</icon><name>About QuickUp</name><submenu>QuickUp</submenu>' "$ICON"
+        printf '<unique-id>quickup-about</unique-id><command>&quot;%s&quot; about</command>' "$q"
+        printf '<description>QuickUp</description><patterns>*</patterns>%s</action>\n' "$types"
         printf '<action><icon>%s</icon><name>Update QuickUp</name><submenu>QuickUp</submenu>' "$ICON"
         printf '<unique-id>quickup-update</unique-id><command>&quot;%s&quot; update</command>' "$q"
         printf '<description>QuickUp</description><patterns>*</patterns>%s</action>\n' "$types"
@@ -429,6 +518,7 @@ case "${1:-install}" in
     uninstall) cmd_uninstall ;;
     update)    cmd_update ;;
     upload)    cmd_upload "${2:?service}" "${3:?file}" ;;
+    about)     cmd_about ;;
     selftest)  cmd_selftest ;;
-    *)         echo "usage: quickup.sh {install|uninstall|update|upload <service> <file>}" >&2; exit 1 ;;
+    *)         echo "usage: quickup.sh {install|uninstall|update|about|upload <service> <file>}" >&2; exit 1 ;;
 esac
