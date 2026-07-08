@@ -39,7 +39,8 @@ $script:Services = [ordered]@{
 
 $script:UserAgent = 'QuickUp/1.0 (+https://github.com/Riyoway/quickup)'
 $script:RegPath = 'Software\Classes\*\shell\QuickUp'
-$script:InstallerUrl = 'https://raw.githubusercontent.com/Riyoway/quickup/main/quickup.ps1'
+$script:RepoRaw = 'https://raw.githubusercontent.com/Riyoway/quickup/main'
+$script:InstallerUrl = "$script:RepoRaw/quickup.ps1"
 
 # ASCII-only banner so it renders in any console code page (install.cmd).
 function Write-Banner {
@@ -107,7 +108,7 @@ function Get-Asset {
     if (Test-Path -LiteralPath $Dest) { return $true }
     try {
         [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
-        Invoke-WebRequest -UseBasicParsing -OutFile $Dest -Uri "https://raw.githubusercontent.com/Riyoway/quickup/main/assets/$Rel"
+        Invoke-WebRequest -UseBasicParsing -OutFile $Dest -Uri "$script:RepoRaw/assets/$Rel"
     } catch { }
     return (Test-Path -LiteralPath $Dest)
 }
