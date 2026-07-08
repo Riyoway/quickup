@@ -39,6 +39,7 @@ $script:Services = [ordered]@{
 
 $script:UserAgent = 'QuickUp/1.0 (+https://github.com/Riyoway/quickup)'
 $script:RegPath = 'Software\Classes\*\shell\QuickUp'
+$script:InstallerUrl = 'https://raw.githubusercontent.com/Riyoway/quickup/main/quickup.ps1'
 
 # ASCII-only banner so it renders in any console code page (install.cmd).
 function Write-Banner {
@@ -99,8 +100,10 @@ function Get-ServiceRequest {
 # Returns $true when $Dest ends up present.
 function Get-Asset {
     param([string]$Rel, [string]$Dest)
-    $src = Join-Path (Split-Path -Parent $PSCommandPath) ('assets\' + ($Rel -replace '/', '\'))
-    if (Test-Path -LiteralPath $src) { Copy-Item -LiteralPath $src -Destination $Dest -Force; return $true }
+    if ($PSCommandPath) {
+        $src = Join-Path (Split-Path -Parent $PSCommandPath) ('assets\' + ($Rel -replace '/', '\'))
+        if (Test-Path -LiteralPath $src) { Copy-Item -LiteralPath $src -Destination $Dest -Force; return $true }
+    }
     if (Test-Path -LiteralPath $Dest) { return $true }
     try {
         [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
@@ -128,6 +131,9 @@ function Install-QuickUp {
     $target = Join-Path $installDir 'quickup.ps1'
     if ($PSCommandPath -and ($PSCommandPath -ne $target)) {
         Copy-Item -LiteralPath $PSCommandPath -Destination $target -Force
+    } elseif (-not $PSCommandPath) {
+        [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+        Invoke-WebRequest -UseBasicParsing -Uri $script:InstallerUrl -OutFile $target
     }
 
     # Parent-menu icon (app icon).
@@ -187,11 +193,10 @@ function Install-QuickUp {
 }
 
 function Update-QuickUp {
-    $url = 'https://raw.githubusercontent.com/Riyoway/quickup/main/quickup.ps1'
     $tmp = Join-Path $env:TEMP 'quickup-latest.ps1'
     [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
     Write-Host 'Fetching the latest QuickUp ...' -ForegroundColor DarkCyan
-    Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $tmp
+    Invoke-WebRequest -UseBasicParsing -Uri $script:InstallerUrl -OutFile $tmp
     # Re-run install from the fresh copy: refreshes the script, icon and menu.
     & (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') `
         -NoProfile -ExecutionPolicy Bypass -File $tmp install
