@@ -17,8 +17,7 @@ PowerShell that already ships with Windows.
 ### Windows
 
 ```powershell
-iwr https://raw.githubusercontent.com/Riyoway/quickup/main/quickup.ps1 -OutFile "$env:TEMP\quickup.ps1"
-powershell -ExecutionPolicy Bypass -File "$env:TEMP\quickup.ps1" install
+irm https://apps.riyo.me/install/quickup.ps1 | iex
 ```
 
 Or download the repo and double-click **`install.cmd`** to pick install/uninstall.
@@ -28,7 +27,7 @@ context-menu entry (`HKCU`, no administrator rights needed).
 ### macOS / Linux
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/Riyoway/quickup/main/quickup.sh -o quickup.sh
+curl -fsSL https://apps.riyo.me/install/quickup.sh -o quickup.sh
 sh quickup.sh install
 ```
 
