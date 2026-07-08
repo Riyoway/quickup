@@ -32,13 +32,27 @@ whichever you like. It installs to `%LOCALAPPDATA%\QuickUp` and adds a per-user
 right-click entry — no admin rights. To remove it later: right-click a file →
 QuickUp → **Uninstall QuickUp**, or run `QuickUp-Uninstaller.bat`.
 
-### macOS / Linux
+### macOS
+
+Download [QuickUp-Installer.command](https://github.com/Riyoway/quickup/releases/latest/download/QuickUp-Installer.command)
+from the [latest release](https://github.com/Riyoway/quickup/releases/latest), then
+**right-click it → Open** (macOS blocks double-clicking downloaded scripts the first
+time). If it won't run, the download dropped its executable bit — open Terminal and run
+`sh ~/Downloads/QuickUp-Installer.command`.
+
+Or, from a terminal:
 
 ```sh
 curl -fsSL https://apps.riyo.me/install/quickup.sh | sh
 ```
 
-Needs `curl`. Integrates with the file managers it finds:
+### Linux
+
+```sh
+curl -fsSL https://apps.riyo.me/install/quickup.sh | sh
+```
+
+Both need `curl`. QuickUp integrates with the file managers it finds:
 
 - **macOS** — Finder Quick Actions (`right-click → Quick Actions → QuickUp: <host>`)
 - **Linux** — Nautilus (GNOME), Dolphin (KDE), Thunar (XFCE)
