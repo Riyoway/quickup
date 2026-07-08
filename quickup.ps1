@@ -358,6 +358,48 @@ function Uninstall-QuickUp {
     Write-Host ''
 }
 
+# Builds a fresh request and (re)starts the upload for the window described by
+# $ctx, resetting it to the in-progress state. Called on open and on Retry.
+function Start-QuickUpload {
+    param([hashtable]$ctx)
+    foreach ($d in @($ctx.Stream, $ctx.Content, $ctx.Client)) { if ($d) { try { $d.Dispose() } catch { } } }
+    $ctx.Url = $null
+    $ctx.Status.Text = "Uploading `"$($ctx.FileName)`" to $($ctx.DisplayName)"
+    $ctx.Bar.Value = 0; $ctx.Bar.Visibility = 'Visible'
+    $ctx.UrlBox.Text = ''; $ctx.UrlBox.Foreground = $ctx.TextBrush; $ctx.UrlWrap.Visibility = 'Collapsed'
+    $ctx.Retry.Visibility = 'Collapsed'
+    $ctx.Copy.Visibility = 'Visible'; $ctx.Open.Visibility = 'Visible'
+    $ctx.Copy.IsEnabled = $false; $ctx.Open.IsEnabled = $false; $ctx.Copy.Content = 'Copy'
+    try {
+        $client = [System.Net.Http.HttpClient]::new()
+        $client.Timeout = [TimeSpan]::FromHours(1)
+        $client.DefaultRequestHeaders.Add('User-Agent', $script:UserAgent)
+        $content = [System.Net.Http.MultipartFormDataContent]::new()
+        foreach ($k in $ctx.Req.Fields.Keys) {
+            $content.Add([System.Net.Http.StringContent]::new([string]$ctx.Req.Fields[$k]), $k)
+        }
+        $stream = [QuickUp.ProgressStream]::new([System.IO.File]::OpenRead($ctx.Path))
+        $fc = [System.Net.Http.StreamContent]::new($stream)
+        $fc.Headers.ContentType = [System.Net.Http.Headers.MediaTypeHeaderValue]::new('application/octet-stream')
+        $content.Add($fc, $ctx.Req.FileField, $ctx.FileName)
+        $ctx.Client = $client; $ctx.Content = $content; $ctx.Stream = $stream
+        $ctx.Task = $client.PostAsync($ctx.Req.Uri, $content)
+        $ctx.Timer.Start()
+    }
+    catch { Set-UploadError $ctx $_.Exception.Message }
+}
+
+# Puts the window into the failed state, showing the Retry button.
+function Set-UploadError {
+    param([hashtable]$ctx, [string]$Message)
+    $ctx.Status.Text = 'Upload failed'
+    $ctx.Bar.Visibility = 'Collapsed'
+    $ctx.UrlBox.Foreground = [System.Windows.Media.Brushes]::IndianRed
+    $ctx.UrlBox.Text = $Message; $ctx.UrlWrap.Visibility = 'Visible'
+    $ctx.Copy.Visibility = 'Collapsed'; $ctx.Open.Visibility = 'Collapsed'
+    $ctx.Retry.Visibility = 'Visible'
+}
+
 function Invoke-UploadUI {
     param(
         [Parameter(Mandatory)][string]$Service,
@@ -410,24 +452,7 @@ namespace QuickUp {
     $displayName = $script:Services[$Service]
     $fileName = [System.IO.Path]::GetFileName($Path)
     $req = Get-ServiceRequest -Service $Service
-
-    # Kick the upload off immediately; PostAsync returns a running Task that a
-    # UI timer polls, so the dialog stays responsive without extra threads.
-    $client = [System.Net.Http.HttpClient]::new()
-    $client.Timeout = [TimeSpan]::FromHours(1)
-    $client.DefaultRequestHeaders.Add('User-Agent', $script:UserAgent)
-    $content = [System.Net.Http.MultipartFormDataContent]::new()
-    foreach ($k in $req.Fields.Keys) {
-        $content.Add([System.Net.Http.StringContent]::new([string]$req.Fields[$k]), $k)
-    }
     $total = (Get-Item -LiteralPath $Path).Length
-    $stream = [QuickUp.ProgressStream]::new([System.IO.File]::OpenRead($Path))
-    $fileContent = [System.Net.Http.StreamContent]::new($stream)
-    $fileContent.Headers.ContentType = [System.Net.Http.Headers.MediaTypeHeaderValue]::new('application/octet-stream')
-    $content.Add($fileContent, $req.FileField, $fileName)
-    $task = $client.PostAsync($req.Uri, $content)
-
-    $state = [pscustomobject]@{ Url = $null }
     $T = Get-Theme
     $inner = @"
 <Grid Margin="22">
@@ -447,15 +472,13 @@ namespace QuickUp {
     </Border>
   </StackPanel>
   <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right">
+    <Button x:Name="Retry" Style="{StaticResource Primary}" Content="Retry" MinWidth="96" Visibility="Collapsed"/>
     <Button x:Name="Open" Style="{StaticResource Secondary}" Content="Open" Margin="0,0,8,0" IsEnabled="False" MinWidth="84"/>
     <Button x:Name="Copy" Style="{StaticResource Primary}" Content="Copy" IsEnabled="False" MinWidth="96"/>
   </StackPanel>
 </Grid>
 "@
     $win = New-CardWindow -Width 468 -Inner $inner -T $T
-    $status = $win.FindName('Status'); $bar = $win.FindName('Bar')
-    $urlWrap = $win.FindName('UrlWrap'); $urlBox = $win.FindName('Url')
-    $btnCopy = $win.FindName('Copy'); $btnOpen = $win.FindName('Open')
 
     try {
         $favPath = Join-Path $env:LOCALAPPDATA "QuickUp\icons\$Service.ico"
@@ -467,53 +490,57 @@ namespace QuickUp {
         }
     } catch { }
 
-    $status.Text = "Uploading `"$fileName`" to $displayName"
-    $win.FindName('Header').Add_MouseLeftButtonDown({ $win.DragMove() }.GetNewClosure())
-    $win.FindName('Close').Add_Click({ $win.Close() }.GetNewClosure())
-    $btnOpen.Add_Click({ if ($state.Url) { Start-Process $state.Url } }.GetNewClosure())
-    $btnCopy.Add_Click({ if ($state.Url) { $btnCopy.Content = if (Copy-Text $state.Url) { 'Copied' } else { 'Copy failed' } } }.GetNewClosure())
-
     $timer = [System.Windows.Threading.DispatcherTimer]::new()
     $timer.Interval = [TimeSpan]::FromMilliseconds(120)
+
+    $ctx = @{
+        Win = $win; Timer = $timer
+        Status = $win.FindName('Status'); Bar = $win.FindName('Bar')
+        UrlWrap = $win.FindName('UrlWrap'); UrlBox = $win.FindName('Url')
+        Copy = $win.FindName('Copy'); Open = $win.FindName('Open'); Retry = $win.FindName('Retry')
+        Req = $req; Path = $Path; FileName = $fileName; DisplayName = $displayName; Total = $total
+        TextBrush = [System.Windows.Media.BrushConverter]::new().ConvertFromString($T.Text)
+        Url = $null; Task = $null; Client = $null; Content = $null; Stream = $null
+    }
+
     $timer.Add_Tick({
-        if (-not $task.IsCompleted) {
-            if ($total -gt 0) {
-                $pct = [int][Math]::Min(100, [Math]::Floor($stream.Sent * 100 / $total))
-                $bar.Value = $pct
-                $status.Text = "Uploading `"$fileName`" to $displayName   $pct%"
+        if (-not $ctx.Task.IsCompleted) {
+            if ($ctx.Total -gt 0) {
+                $pct = [int][Math]::Min(100, [Math]::Floor($ctx.Stream.Sent * 100 / $ctx.Total))
+                $ctx.Bar.Value = $pct
+                $ctx.Status.Text = "Uploading `"$($ctx.FileName)`" to $($ctx.DisplayName)   $pct%"
             }
             return
         }
-        $bar.Value = 100
-        $timer.Stop()
+        $ctx.Bar.Value = 100
+        $ctx.Timer.Stop()
         try {
-            $resp = $task.GetAwaiter().GetResult()
+            $resp = $ctx.Task.GetAwaiter().GetResult()
             $body = $resp.Content.ReadAsStringAsync().GetAwaiter().GetResult().Trim()
             if (-not $resp.IsSuccessStatusCode) { throw "HTTP $([int]$resp.StatusCode): $body" }
             if ($body -notmatch '^https?://\S+$') { throw "Unexpected response: $body" }
-            $state.Url = $body
-            $status.Text = "Uploaded to $displayName"
-            $bar.Visibility = 'Collapsed'
-            $urlBox.Text = $body; $urlWrap.Visibility = 'Visible'
-            $urlBox.Focus(); $urlBox.SelectAll()
-            $btnCopy.IsEnabled = $true; $btnOpen.IsEnabled = $true
+            $ctx.Url = $body
+            $ctx.Status.Text = "Uploaded to $($ctx.DisplayName)"
+            $ctx.Bar.Visibility = 'Collapsed'
+            $ctx.UrlBox.Text = $body; $ctx.UrlWrap.Visibility = 'Visible'
+            $ctx.UrlBox.Focus(); $ctx.UrlBox.SelectAll()
+            $ctx.Copy.IsEnabled = $true; $ctx.Open.IsEnabled = $true
             # Copy last: a clipboard lock must not turn a good upload into an error.
-            $btnCopy.Content = if (Copy-Text $body) { 'Copied' } else { 'Copy' }
+            $ctx.Copy.Content = if (Copy-Text $body) { 'Copied' } else { 'Copy' }
         }
-        catch {
-            $status.Text = 'Upload failed'
-            $bar.Visibility = 'Collapsed'
-            $urlBox.Foreground = [System.Windows.Media.Brushes]::IndianRed
-            $urlBox.Text = $_.Exception.Message; $urlWrap.Visibility = 'Visible'
-        }
-        finally {
-            $stream.Dispose(); $content.Dispose(); $client.Dispose()
-        }
+        catch { Set-UploadError $ctx $_.Exception.Message }
     }.GetNewClosure())
 
-    $timer.Start()
+    $win.FindName('Header').Add_MouseLeftButtonDown({ $win.DragMove() }.GetNewClosure())
+    $win.FindName('Close').Add_Click({ $win.Close() }.GetNewClosure())
+    $ctx.Open.Add_Click({ if ($ctx.Url) { Start-Process $ctx.Url } }.GetNewClosure())
+    $ctx.Copy.Add_Click({ if ($ctx.Url) { $ctx.Copy.Content = if (Copy-Text $ctx.Url) { 'Copied' } else { 'Copy failed' } } }.GetNewClosure())
+    $ctx.Retry.Add_Click({ Start-QuickUpload $ctx }.GetNewClosure())
+
+    Start-QuickUpload $ctx
     [void]$win.ShowDialog()
     $timer.Stop()
+    foreach ($d in @($ctx.Stream, $ctx.Content, $ctx.Client)) { if ($d) { try { $d.Dispose() } catch { } } }
 }
 
 function Invoke-About {
