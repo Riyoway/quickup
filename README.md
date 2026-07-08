@@ -14,13 +14,21 @@ PowerShell that already ships with Windows.
 
 ## Install
 
-### Windows
+### Windows — easiest (no PowerShell needed)
+
+Download **[QuickUp-Installer.bat](https://github.com/Riyoway/quickup/releases/latest/download/QuickUp-Installer.bat)**
+from the [latest release](https://github.com/Riyoway/quickup/releases/latest) and
+double-click it. Then right-click any file and choose **QuickUp**.
+
+To remove it: right-click a file → QuickUp → **Uninstall QuickUp** (or run
+`QuickUp-Uninstaller.bat`).
+
+### Windows — one-liner
 
 ```powershell
 irm https://apps.riyo.me/install/quickup.ps1 | iex
 ```
 
-Or download the repo and double-click **`install.cmd`** to pick install/uninstall.
 The installer copies the script to `%LOCALAPPDATA%\QuickUp` and adds a per-user
 context-menu entry (`HKCU`, no administrator rights needed).
 
