@@ -88,6 +88,7 @@ svc_max_bytes() {
 svc_banned() {
     case "$1" in
         catbox|litterbox) echo "exe scr cpl doc docx docm jar" ;;
+        x0)               echo "exe dll com scr jar class" ;;
         uguu)             echo "exe scr com vbs bat cmd htm html jar msi apk phtml svg" ;;
         *)                echo "" ;;
     esac
@@ -95,7 +96,7 @@ svc_banned() {
 svc_accept() {
     case "$1" in
         catbox)    echo "Permanent  |  max 200 MB  |  blocked: .exe .scr .cpl .doc .docx .jar" ;;
-        x0)        echo "Kept 3-100 days (smaller lasts longer)  |  max 1 GB  |  any file type" ;;
+        x0)        echo "Kept 3-100 days (smaller lasts longer)  |  max 1 GB  |  blocked: executables (.exe .dll .jar .class)" ;;
         litterbox) echo "Temporary 1 hour  |  max 1 GB  |  blocked: .exe .scr .cpl .doc .docx .jar" ;;
         uguu)      echo "Temporary 3 hours  |  max 128 MB  |  blocked: executables, scripts, .html, .svg, .jar, .apk" ;;
     esac

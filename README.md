@@ -51,7 +51,7 @@ before uploading, with a host that *does* accept it suggested.
 | Host      | Retention                 | Max size | Blocked types                          |
 | --------- | ------------------------- | -------- | -------------------------------------- |
 | Catbox    | permanent                 | 200 MB   | `.exe .scr .cpl .doc .docx .jar`       |
-| x0.at     | 3–100 days (smaller lasts longer) | 1 GB | none                             |
+| x0.at     | 3–100 days (smaller lasts longer) | 1 GB | executables (`.exe .dll .jar .class`)  |
 | Litterbox | 1 hour                    | 1 GB     | `.exe .scr .cpl .doc .docx .jar`       |
 | Uguu      | 3 hours                   | 128 MB   | executables, scripts, `.html .svg .jar .apk` |
 

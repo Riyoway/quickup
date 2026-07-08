@@ -43,8 +43,8 @@ $script:Services = [ordered]@{
 $script:Limits = [ordered]@{
     catbox    = @{ Max = 200MB;  Banned = @('exe', 'scr', 'cpl', 'doc', 'docx', 'docm', 'jar')
                    Accept = 'Permanent  |  max 200 MB  |  blocked: .exe .scr .cpl .doc .docx .jar' }
-    x0        = @{ Max = 1024MB; Banned = @()
-                   Accept = 'Kept 3-100 days (smaller lasts longer)  |  max 1 GB  |  any file type' }
+    x0        = @{ Max = 1024MB; Banned = @('exe', 'dll', 'com', 'scr', 'jar', 'class')
+                   Accept = 'Kept 3-100 days (smaller lasts longer)  |  max 1 GB  |  blocked: executables (.exe .dll .jar .class)' }
     litterbox = @{ Max = 1024MB; Banned = @('exe', 'scr', 'cpl', 'doc', 'docx', 'docm', 'jar')
                    Accept = 'Temporary 1 hour  |  max 1 GB  |  blocked: .exe .scr .cpl .doc .docx .jar' }
     uguu      = @{ Max = 128MB;  Banned = @('exe', 'scr', 'com', 'vbs', 'bat', 'cmd', 'htm', 'html', 'jar', 'msi', 'apk', 'phtml', 'svg')
@@ -141,12 +141,12 @@ function Get-Theme {
 # Builds a borderless, rounded, shadowed card window around $Inner with themed
 # Primary/Secondary/Ghost button styles. Returns the loaded Window.
 function New-CardWindow {
-    param([int]$Width, [int]$Height, [string]$Inner, [hashtable]$T)
+    param([int]$Width, [string]$Inner, [hashtable]$T)
     $xaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         WindowStyle="None" AllowsTransparency="True" Background="Transparent" ResizeMode="NoResize"
-        Width="$Width" Height="$Height" FontFamily="Segoe UI" TextOptions.TextFormattingMode="Ideal"
+        Width="$Width" SizeToContent="Height" MinHeight="80" FontFamily="Segoe UI" TextOptions.TextFormattingMode="Ideal"
         WindowStartupLocation="CenterScreen" Topmost="True" ShowInTaskbar="False">
   <Window.Resources>
     <Style x:Key="Primary" TargetType="Button">
@@ -190,7 +190,7 @@ function New-CardWindow {
 
 # A simple themed card with a title, wrapped body text and an OK button.
 function Show-Message {
-    param([string]$Title, [string]$Body, [int]$Height = 210)
+    param([string]$Title, [string]$Body)
     Initialize-Wpf
     $T = Get-Theme
     $inner = @"
@@ -204,7 +204,7 @@ function Show-Message {
   <Button x:Name="Ok" Grid.Row="2" Style="{StaticResource Primary}" Content="OK" HorizontalAlignment="Right" MinWidth="88" Margin="0,14,0,0"/>
 </Grid>
 "@
-    $win = New-CardWindow -Width 460 -Height $Height -Inner $inner -T $T
+    $win = New-CardWindow -Width 460 -Inner $inner -T $T
     $win.FindName('Body').Text = $Body
     $win.FindName('Header').Add_MouseLeftButtonDown({ $win.DragMove() }.GetNewClosure())
     $win.FindName('Close').Add_Click({ $win.Close() }.GetNewClosure())
@@ -375,7 +375,7 @@ function Invoke-UploadUI {
         $ok = @(Get-SupportingServices -Path $Path)
         $suggest = if ($ok.Count) { "This file works with:`r`n  - " + ($ok -join "`r`n  - ") }
                    else { 'None of the configured hosts accept this file.' }
-        Show-Message -Title 'File not supported' -Body "$reason`r`n`r`n$suggest" -Height 226
+        Show-Message -Title 'File not supported' -Body "$reason`r`n`r`n$suggest"
         return
     }
 
@@ -452,7 +452,7 @@ namespace QuickUp {
   </StackPanel>
 </Grid>
 "@
-    $win = New-CardWindow -Width 468 -Height 216 -Inner $inner -T $T
+    $win = New-CardWindow -Width 468 -Inner $inner -T $T
     $status = $win.FindName('Status'); $bar = $win.FindName('Bar')
     $urlWrap = $win.FindName('UrlWrap'); $urlBox = $win.FindName('Url')
     $btnCopy = $win.FindName('Copy'); $btnOpen = $win.FindName('Open')
@@ -533,7 +533,7 @@ function Invoke-About {
   </Grid>
 </Grid>
 "@
-    $win = New-CardWindow -Width 520 -Height 344 -Inner $inner -T $T
+    $win = New-CardWindow -Width 520 -Inner $inner -T $T
     $list = $win.FindName('List')
     $conv = [System.Windows.Media.BrushConverter]::new()
     $accent = $conv.ConvertFromString($T.Accent); $sub = $conv.ConvertFromString($T.Sub)
