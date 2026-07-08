@@ -27,8 +27,7 @@ context-menu entry (`HKCU`, no administrator rights needed).
 ### macOS / Linux
 
 ```sh
-curl -fsSL https://apps.riyo.me/install/quickup.sh -o quickup.sh
-sh quickup.sh install
+curl -fsSL https://apps.riyo.me/install/quickup.sh | sh
 ```
 
 Needs `curl`. Integrates with the file managers it finds:

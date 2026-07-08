@@ -6,8 +6,30 @@
 #
 #   ./quickup.sh install
 #   ./quickup.sh uninstall
+#   curl -fsSL https://apps.riyo.me/install/quickup.sh | sh
 #
+
+QUICKUP_RAW='https://raw.githubusercontent.com/Riyoway/quickup/main'
+QUICKUP_INSTALL_URL='https://apps.riyo.me/install/quickup.sh'
+
+# Bootstrap so `curl -fsSL .../quickup.sh | sh` works on any machine. This
+# script needs bash and a real file on disk (it copies itself and derives
+# asset paths from $0), but a pipe runs under /bin/sh -- often dash, which
+# chokes on the bash array syntax below -- with no $0 file. Re-exec bash on a
+# real copy *before* any bash-only syntax is parsed. Kept strictly POSIX.
+if [ -z "${BASH_VERSION:-}" ] || [ ! -f "$0" ]; then
+    if [ -f "$0" ]; then
+        exec bash "$0" "$@"                       # real file, wrong shell
+    fi
+    _boot="${TMPDIR:-/tmp}/quickup-boot.$$.sh"    # piped: fetch a real copy
+    curl -fsSL "$QUICKUP_INSTALL_URL" -o "$_boot" 2>/dev/null \
+        || curl -fsSL "$QUICKUP_RAW/quickup.sh" -o "$_boot"
+    exec bash "$_boot" "$@"
+fi
+
 set -euo pipefail
+# Remove the bootstrap copy on exit (only when we are running as that copy).
+case "$0" in */quickup-boot.*.sh) trap 'rm -f "$0"' EXIT ;; esac
 
 UA='QuickUp/1.0 (+https://github.com/Riyoway/quickup)'
 SELF="$(cd "$(dirname "$0")" >/dev/null 2>&1 && pwd)/$(basename "$0")"
@@ -138,7 +160,7 @@ svc_icon() {
     mkdir -p "$idir/icons"
     if [ -f "$src" ]; then cp "$src" "$dest"
     elif [ ! -f "$dest" ]; then
-        curl -fsSL "https://raw.githubusercontent.com/Riyoway/quickup/main/assets/services/$svc.png" -o "$dest" 2>/dev/null || true
+        curl -fsSL "$QUICKUP_RAW/assets/services/$svc.png" -o "$dest" 2>/dev/null || true
     fi
     if [ -f "$dest" ]; then printf '%s' "$dest"; else printf '%s' "$ICON"; fi
 }
@@ -163,7 +185,7 @@ cmd_install() {
     local icon="$dir/icon.png" src="$(dirname "$SELF")/assets/logo.png"
     if [ -f "$src" ]; then cp "$src" "$icon"
     elif [ ! -f "$icon" ]; then
-        curl -fsSL https://raw.githubusercontent.com/Riyoway/quickup/main/assets/logo.png -o "$icon" 2>/dev/null || true
+        curl -fsSL "$QUICKUP_RAW/assets/logo.png" -o "$icon" 2>/dev/null || true
     fi
     [ -f "$icon" ] && ICON="$icon"
 
@@ -212,10 +234,9 @@ cmd_uninstall() {
 }
 
 cmd_update() {
-    local url='https://raw.githubusercontent.com/Riyoway/quickup/main/quickup.sh'
     local tmp; tmp="$(mktemp)"
     echo "Fetching the latest QuickUp ..."
-    curl -fsSL "$url" -o "$tmp"
+    curl -fsSL "$QUICKUP_RAW/quickup.sh" -o "$tmp"
     sh "$tmp" install
     rm -f "$tmp"
     gui_notify "QuickUp updated to the latest version."
